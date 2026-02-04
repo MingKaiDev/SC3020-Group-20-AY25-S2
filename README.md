@@ -2,6 +2,8 @@
 
 ## Setup
 - Import the csv into the postgres tables in these order
+- Change the delimitator to | from ,
+- Change encoder to UTF8
 1. region.csv → region table
 2. nation.csv → nation table  
 3. supplier.csv → supplier table
