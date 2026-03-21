@@ -199,7 +199,7 @@ with conn.cursor() as cur:
             csv_path = os.path.join(CSV_DIR, csv_file)
             if os.path.exists(csv_path):
                 with open(csv_path, "r") as f:
-                    with cur.copy(f"COPY public.{table} FROM STDIN WITH (FORMAT CSV, DELIMITER ',')") as copy:
+                    with cur.copy(f"COPY public.{table} FROM STDIN WITH (FORMAT CSV, DELIMITER '|')") as copy:
                         while data := f.read(8192):
                             copy.write(data)
                 print(f"  Loaded: {table}")
