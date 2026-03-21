@@ -10,6 +10,7 @@
 import psycopg
 import os
 import json
+import logging
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -18,7 +19,7 @@ load_dotenv()
 # SECTION 1: DATABASE CONNECTION
 # =============================================================================
 
-def get_connection():
+def get_connection(): #Done
     """
     Establishes and returns a connection to the PostgreSQL database.
     Reads credentials from the .env file.
@@ -27,17 +28,21 @@ def get_connection():
         psycopg.Connection: A live database connection object.
 
     TODO:
-        - Load DB credentials from .env using os.getenv()
+        - Load DB credentials from .env using os.getenv() 
         - Call psycopg.connect() with host, port, dbname, user, password
         - Raise a clear error message if connection fails
     """
-    return psycopg.connect(
-        host=os.getenv("DB_HOST"), port=os.getenv("DB_PORT"),
-        dbname=os.getenv("DB_NAME"), user=os.getenv("DB_USER"),
-        password=os.getenv("DB_PASSWORD")
-    )
+    try:
+        return psycopg.connect(
+            host="localhost", port=os.getenv("DB_PORT"),
+            dbname=os.getenv("DB_NAME"), user=os.getenv("DB_USER"),
+            password=os.getenv("DB_PASSWORD")
+        )
+    except Exception as e:
+        logging.exception("Error occurred while connecting to PostgreSQL")
+        raise ConnectionError(f"Failed to connect to PostgreSQL: {e}") from e
 
-def close_connection(conn):
+def close_connection(conn): #Done
     """
     Safely closes the database connection.
 
@@ -48,7 +53,8 @@ def close_connection(conn):
         - Check if conn is not None before closing
         - Call conn.close()
     """
-    pass
+    if(conn):
+        conn.close()
 
 # =============================================================================
 # SECTION 2: QUERY VALIDATION
@@ -98,7 +104,6 @@ def get_qep(conn, sql_query: str) -> dict:
     NOTE:
         The returned dict has structure: { "Plan": { "Node Type": ..., "Plans": [...] } }
     """
-    pass
 
 
 # =============================================================================
@@ -244,4 +249,8 @@ if __name__ == "__main__":
     #   5. Call get_all_aqps() and print the keys of the returned dict
     #   6. Call parse_plan_nodes() and print how many nodes were found
     #   7. Call close_connection()
+
+    conn = get_connection() #1
+    test_query = "SELECT * FROM nation" #2
+    close_connection(conn) #7
     pass
