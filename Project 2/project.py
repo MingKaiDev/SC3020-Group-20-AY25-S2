@@ -13,6 +13,8 @@ import sys
 from interface import TpcHAnnotatorApp
 from preprocessing import get_connection, close_connection
 
+from dummy_data import DummyConnection
+
 # =============================================================================
 # SECTION 1: WINDOW CONFIGURATION
 # =============================================================================

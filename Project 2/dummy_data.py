@@ -228,4 +228,4 @@ if __name__ == "__main__":
         cost = plan["Plan"]["Total Cost"] if plan else "N/A (None)"
         print(f"  {label:20s} → cost: {cost}")
 
-    print("\nDummy data looks good! ✓")
+    print("\nDummy data is good")

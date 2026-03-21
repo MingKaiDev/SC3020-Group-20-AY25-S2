@@ -13,6 +13,9 @@ from tkinter import ttk, scrolledtext, messagebox, font
 from preprocessing import get_connection, close_connection, get_qep, get_all_aqps, validate_query
 from annotation import generate_annotations
 
+# In _run_annotation() during development, replace pipeline with:
+from dummy_data import get_dummy_qep, get_dummy_aqps, DUMMY_SQL
+
 # =============================================================================
 # SECTION 1: MAIN APPLICATION CLASS
 # =============================================================================
@@ -231,6 +234,11 @@ class TpcHAnnotatorApp:
             - Update status bar: "Done."
             - On any exception: show messagebox.showerror(), reset status bar
         """
+        qep    = get_dummy_qep()
+        aqps   = get_dummy_aqps()
+        result = generate_annotations(qep, aqps)
+        self._display_annotations(DUMMY_SQL, result)
+        self._populate_qep_tree(qep)
         pass
 
     def _clear_all(self):

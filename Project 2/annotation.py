@@ -8,6 +8,7 @@
 
 from preprocessing import parse_plan_nodes, get_root_cost, get_node_cost
 
+from dummy_data import get_dummy_qep, get_dummy_aqps 
 # =============================================================================
 # SECTION 1: CONSTANTS
 # =============================================================================
@@ -244,4 +245,8 @@ if __name__ == "__main__":
     #   5. Call generate_annotations(qep, aqps)
     #   6. Print result["full_text"] — verify it produces readable annotations
     #   7. Close connection
+    qep  = get_dummy_qep()   # ← swap to get_qep(conn, sql) when ready
+    aqps = get_dummy_aqps()  # ← swap to get_all_aqps(conn, sql) when ready
+    result = generate_annotations(qep, aqps)
+    print(result["full_text"])
     pass
