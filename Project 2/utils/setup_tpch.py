@@ -172,8 +172,7 @@ CREATE_STATEMENTS = [
     """
 ]
 
-# --- 3. Table-to-CSV mapping for bulk loading (set CSV_DIR to your folder) ---
-CSV_DIR = r"C:\path\to\your\tpch\csv"   # <-- CHANGE THIS
+CSV_DIR = "/app/data"   # <-- CHANGE THIS
 
 TABLE_CSV_MAP = {
     "region":   "region.csv",
@@ -198,10 +197,10 @@ with conn.cursor() as cur:
         for table, csv_file in TABLE_CSV_MAP.items():
             csv_path = os.path.join(CSV_DIR, csv_file)
             if os.path.exists(csv_path):
-                with open(csv_path, "r") as f:
+                with open(csv_path, "r", encoding="utf-8") as f:
                     with cur.copy(f"COPY public.{table} FROM STDIN WITH (FORMAT CSV, DELIMITER '|')") as copy:
-                        while data := f.read(8192):
-                            copy.write(data)
+                        for line in f:
+                            copy.write(line.rstrip("|\n") + "\n")
                 print(f"  Loaded: {table}")
             else:
                 print(f"  Skipped (file not found): {csv_path}")
