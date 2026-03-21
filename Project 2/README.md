@@ -15,6 +15,10 @@ Project 2/
 ├── .gitignore
 ├── Dockerfile                  # Builds the Python setup container
 ├── docker-compose.yml          # Orchestrates Postgres, setup, and pgAdmin
+├── project.py                  # Entry Point
+├── interface.py                # GUI, wires interface together for user
+├── preprocessing.py            # DB Connection, QEP/AGP Fetching, Query Parsing
+├── annotation.py               # Takes parsed QEP/AQP -> Generate Annotation Text
 ├── requirements.txt            # Python dependencies
 │
 ├── pgadmin/
