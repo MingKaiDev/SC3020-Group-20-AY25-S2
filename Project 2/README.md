@@ -4,7 +4,7 @@
 
 - [Docker Desktop](https://www.docker.com/products/docker-desktop/) installed and running
 - Git
-
+- Python
 ---
 
 ## Project Structure
@@ -19,6 +19,7 @@ Project 2/
 ├── interface.py                # GUI, wires interface together for user
 ├── preprocessing.py            # DB Connection, QEP/AGP Fetching, Query Parsing
 ├── annotation.py               # Takes parsed QEP/AQP -> Generate Annotation Text
+├── dummy_data.py               # Returns Hardcoded fake QEP/AQP data to enable parallel development
 ├── requirements.txt            # Python dependencies
 │
 ├── pgadmin/
