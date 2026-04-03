@@ -52,7 +52,11 @@ def compare_costs(qep_cost: float, aqp_cost: float) -> float:
         - Guard against qep_cost == 0
         - Return round(aqp_cost / qep_cost, 1)
     """
-    pass
+    if qep_cost <= 0 or qep_cost == float("inf"):
+        return 0.0
+    if aqp_cost == float("inf"):
+        return float("inf")
+    return round(aqp_cost / qep_cost, 1)
 
 
 def get_cost_comparison_reasons(qep_cost: float, aqps: dict,
@@ -79,7 +83,16 @@ def get_cost_comparison_reasons(qep_cost: float, aqps: dict,
         - Only add a reason if ratio > 1.0 (AQP is more expensive)
         - Format reason as: "<AQP_LABEL_MAP[label]> costs ~<ratio>x more"
     """
-    pass
+    reasons = []
+    for label, plan in aqps.items():
+        if label == skip_label or plan is None:
+            continue
+        aqp_cost = get_root_cost(plan)
+        ratio = compare_costs(qep_cost, aqp_cost)
+        if ratio > 1.0:
+            alt_name = AQP_LABEL_MAP.get(label, label)
+            reasons.append(f"{alt_name} costs ~{ratio}x more")
+    return reasons
 
 # =============================================================================
 # SECTION 3: SCAN ANNOTATION
@@ -118,7 +131,36 @@ def annotate_scans(qep_nodes: list) -> list:
         - Append filter info if "Filter" key exists:
             " Filter applied: <filter>"
     """
-    pass
+    annotations = []
+    for node in qep_nodes:
+        node_type = node.get("Node Type", "")
+        if node_type not in SCAN_NODES:
+            continue
+
+        table = node.get("Relation Name", "unknown")
+        index = node.get("Index Name", "")
+        filter_cond = node.get("Filter", "")
+
+        if node_type == "Seq Scan":
+            text = (f"Table '{table}' is read using Sequential Scan. "
+                    f"This is likely because no usable index exists on the filtered columns.")
+        elif node_type in ("Index Scan", "Index Only Scan"):
+            text = (f"Table '{table}' is accessed via {node_type} on '{index}'. "
+                    f"An index was available and used to avoid a full table scan.")
+        elif node_type == "Bitmap Heap Scan":
+            text = (f"Table '{table}' is accessed via Bitmap Heap Scan. "
+                    f"This handles multiple matching rows efficiently using a bitmap.")
+        elif node_type == "Bitmap Index Scan":
+            idx = f" on '{index}'" if index else ""
+            text = f"A Bitmap Index Scan{idx} is used to build a bitmap of matching rows."
+        else:
+            text = f"Table '{table}' is accessed using {node_type}."
+
+        if filter_cond:
+            text += f" Filter applied: {filter_cond}"
+
+        annotations.append(text)
+    return annotations
 
 # =============================================================================
 # SECTION 4: JOIN ANNOTATION
@@ -159,7 +201,42 @@ def annotate_joins(qep_nodes: list, aqps: dict, qep_cost: float) -> list:
           OR if no reasons found (no cheaper AQP):
             "This join is implemented using <join_type>."
     """
-    pass
+    annotations = []
+    skip_map = {
+        "Hash Join":   "no_hashjoin",
+        "Merge Join":  "no_mergejoin",
+        "Nested Loop": "no_nestloop",
+    }
+
+    for node in qep_nodes:
+        node_type = node.get("Node Type", "")
+        if node_type not in JOIN_NODES:
+            continue
+
+        join_kind = node.get("Join Type", "")
+
+        condition = ""
+        if node_type == "Hash Join":
+            condition = node.get("Hash Cond", "")
+        elif node_type == "Merge Join":
+            condition = node.get("Merge Cond", "")
+        elif node_type == "Nested Loop":
+            condition = node.get("Join Filter", "")
+
+        skip_label = skip_map.get(node_type)
+        reasons = get_cost_comparison_reasons(qep_cost, aqps, skip_label)
+
+        kind_str = f" ({join_kind} join)" if join_kind else ""
+        text = f"This join is implemented using {node_type}{kind_str}."
+
+        if condition:
+            text += f" Join condition: {condition}."
+
+        if reasons:
+            text += f" Alternatives not chosen: {'; '.join(reasons)}."
+
+        annotations.append(text)
+    return annotations
 
 # =============================================================================
 # SECTION 5: OTHER OPERATIONS ANNOTATION
@@ -195,7 +272,31 @@ def annotate_others(qep_nodes: list) -> list:
             * Default fallback for anything else in OTHER_NODES:
                 - "Operation: <node_type> (cost: <total_cost>)."
     """
-    pass
+    annotations = []
+    for node in qep_nodes:
+        node_type = node.get("Node Type", "")
+        if node_type not in OTHER_NODES:
+            continue
+
+        if node_type == "Sort":
+            keys = node.get("Sort Key", [])
+            text = f"Results are sorted by: {', '.join(keys)}."
+        elif node_type in ("Aggregate", "Hash Aggregate", "Group Aggregate"):
+            strategy = node.get("Strategy", node_type)
+            text = f"Aggregation is performed using {strategy} strategy."
+        elif node_type == "Limit":
+            text = "Result set is limited to a fixed number of rows (LIMIT clause)."
+        elif node_type == "Unique":
+            text = "Duplicate rows are removed (DISTINCT or UNION clause)."
+        elif node_type == "Materialize":
+            text = ("Intermediate results are materialized (stored temporarily) "
+                    "to avoid re-scanning.")
+        else:
+            cost = node.get("Total Cost", "N/A")
+            text = f"Operation: {node_type} (cost: {cost})."
+
+        annotations.append(text)
+    return annotations
 
 # =============================================================================
 # SECTION 6: MASTER ANNOTATION FUNCTION
@@ -228,25 +329,44 @@ def generate_annotations(qep: dict, aqps: dict) -> dict:
         - Combine all lists into "full_text" using "\n".join()
         - Return the structured dict
     """
-    pass
+    nodes = parse_plan_nodes(qep)
+    qep_cost = get_root_cost(qep)
+
+    scans = annotate_scans(nodes)
+    joins = annotate_joins(nodes, aqps, qep_cost)
+    others = annotate_others(nodes)
+
+    full_text = "\n".join(scans + joins + others)
+    return {
+        "scans": scans,
+        "joins": joins,
+        "others": others,
+        "full_text": full_text,
+    }
 
 # =============================================================================
 # SECTION 7: ENTRY POINT (for quick testing)
 # =============================================================================
 
 if __name__ == "__main__":
-    # Quick test to verify annotation works end-to-end independently
-    # TODO (for testing only):
-    #   1. Import get_connection, get_qep, get_all_aqps from preprocessing
-    #   2. Connect to DB
-    #   3. Run a test query, e.g.:
-    #      "SELECT * FROM customer C, orders O WHERE C.c_custkey = O.o_custkey"
-    #   4. Fetch QEP and AQPs
-    #   5. Call generate_annotations(qep, aqps)
-    #   6. Print result["full_text"] — verify it produces readable annotations
-    #   7. Close connection
-    qep  = get_dummy_qep()   # ← swap to get_qep(conn, sql) when ready
-    aqps = get_dummy_aqps()  # ← swap to get_all_aqps(conn, sql) when ready
+    # --- Dummy data test ---
+    print("=== Dummy Data Test ===")
+    qep  = get_dummy_qep()
+    aqps = get_dummy_aqps()
     result = generate_annotations(qep, aqps)
     print(result["full_text"])
-    pass
+    print(f"\nScans: {len(result['scans'])}, Joins: {len(result['joins'])}, Others: {len(result['others'])}")
+
+    # --- Real data test ---
+    print("\n=== Real Data Test ===")
+    from preprocessing import get_connection, close_connection, get_qep, get_all_aqps
+    conn = get_connection()
+    try:
+        sql = "SELECT * FROM customer C, orders O WHERE C.c_custkey = O.o_custkey"
+        qep = get_qep(conn, sql)
+        aqps = get_all_aqps(conn, sql)
+        result = generate_annotations(qep, aqps)
+        print(result["full_text"])
+        print(f"\nScans: {len(result['scans'])}, Joins: {len(result['joins'])}, Others: {len(result['others'])}")
+    finally:
+        close_connection(conn)
