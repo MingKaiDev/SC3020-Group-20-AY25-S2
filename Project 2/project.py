@@ -102,6 +102,23 @@ def check_dependencies() -> bool:
             - Return False
         - Return True if all imports succeed
     """
+
+    required = [
+        ("psycopg", "psycopg"),
+        ("dotenv", "python-dotenv"),
+    ]
+
+    for module, install_name in required:
+        try:
+            if module == "dotenv":
+                from dotenv import load_dotenv
+            else:
+                __import__(module)
+        except ImportError:
+            msg = f"Missing dependency: {install_name}. Run: pip install {install_name}"
+            print(msg)
+            messagebox.showerror("Missing Dependency", msg)
+            return False
     return True
 
 
