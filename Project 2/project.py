@@ -43,7 +43,16 @@ def configure_window(root: tk.Tk):
         - Optional: set a window icon using root.iconbitmap("icon.ico")
           (skip if no icon file is available)
     """
-    pass
+    root.title("SC3020 Project 2 — SQL Query Annotator")
+    screen_w = root.winfo_screenwidth()
+    screen_h = root.winfo_screenheight()
+    x = (screen_w // 2) - (1200 // 2)
+    y = (screen_h // 2) - (800 // 2)
+    root.geometry(f"1200x800+{x}+{y}")
+    root.minsize(900, 600)
+    return root
+
+
 
 # =============================================================================
 # SECTION 2: PRE-LAUNCH CHECKS
@@ -128,7 +137,7 @@ def launch_app():
         if conn:
             close_connection(conn)
         print("Application Closed")
-
+        
     pass
 
 
