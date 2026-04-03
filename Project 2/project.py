@@ -9,6 +9,7 @@
 
 import tkinter as tk
 from tkinter import messagebox
+from tkinter import ttk
 import sys
 from interface import TpcHAnnotatorApp
 from preprocessing import get_connection, close_connection
@@ -43,7 +44,6 @@ def configure_window(root: tk.Tk):
           (skip if no icon file is available)
     """
     pass
-
 
 # =============================================================================
 # SECTION 2: PRE-LAUNCH CHECKS
@@ -114,6 +114,21 @@ def launch_app():
             - On interrupt: call close_connection(app.conn) if app.conn exists
             - Print "Application closed."
     """
+    if not check_dependencies():
+        sys.exit(1)
+    if not check_db_connection():
+        sys.exit(0)
+    conn = get_connection()
+    root = tk.Tk()
+    configure_window(root)
+    TpcHAnnotatorApp(root)
+    try:
+        root.mainloop()
+    except:
+        if conn:
+            close_connection(conn)
+        print("Application Closed")
+
     pass
 
 
