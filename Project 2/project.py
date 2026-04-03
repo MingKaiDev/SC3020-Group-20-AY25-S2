@@ -80,7 +80,7 @@ def check_db_connection() -> bool:
             - Return True if user clicks OK (launch anyway)
             - Return False if user clicks Cancel (exit)
     """
-    pass
+    return True
 
 
 def check_dependencies() -> bool:
@@ -102,7 +102,7 @@ def check_dependencies() -> bool:
             - Return False
         - Return True if all imports succeed
     """
-    pass
+    return True
 
 
 # =============================================================================
