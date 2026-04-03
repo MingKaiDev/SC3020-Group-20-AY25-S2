@@ -52,7 +52,10 @@ class TpcHAnnotatorApp:
             - Initialise self.conn = None
             - Call _build_top_bar(), _build_panels(), _build_status_bar()
         """
-        pass
+        self._connect_db = None
+        self._build_top_bar()
+        self._build_panels()
+        self._build_status_bar()
 
 
 # =============================================================================
