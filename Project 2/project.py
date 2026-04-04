@@ -157,15 +157,14 @@ def launch_app():
         sys.exit(1)
     if not check_db_connection():
         sys.exit(0)
-    conn = get_connection()
     root = tk.Tk()
-    configure_window(root)
-    TpcHAnnotatorApp(root)
+    root = configure_window(root)
+    app = TpcHAnnotatorApp(root)
     try:
         root.mainloop()
     except:
-        if conn:
-            close_connection(conn)
+        if app.conn:
+            close_connection(app.conn)
         print("Application Closed")
         
     pass
