@@ -186,4 +186,8 @@ if __name__ == "__main__":
             - Show messagebox.showerror("Unexpected Error", str(e))
             - sys.exit(1)
     """
-    launch_app()
+    try:
+        launch_app()
+    except Exception as e:
+        print("Unexpected Error", str(e))
+        sys.exit(1)

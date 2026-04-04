@@ -215,7 +215,19 @@ class TpcHAnnotatorApp:
             - On failure: show messagebox.showerror() with the exception message
                           keep self.status_lbl as "● Not connected", fg="red"
         """
-        pass
+        self.conn = get_connection()
+        if self.conn:
+            pass
+        else:
+            root = tk.Tk()
+            root.withdraw()  # hide the empty root window
+            response = messagebox.askokcancel(
+                "Database Connection Failed",
+                "Could not connect to PostgreSQL.\n"
+                "Check your .env settings and ensure PostgreSQL is running.\n"
+            )
+            root.destroy()
+        
 
     def _run_annotation(self):
         """
