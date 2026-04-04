@@ -37,7 +37,8 @@ def get_connection(): #Done
         - Raise a clear error message if connection fails
     """
     try:
-        host = "localhost"
+        host = os.getenv("DB_HOST", "localhost")
+        #host = "localhost"
         port = os.getenv("DB_PORT", "5432")
         dbname = os.getenv("DB_NAME", "postgres")
         user = os.getenv("DB_USER", "postgres")
