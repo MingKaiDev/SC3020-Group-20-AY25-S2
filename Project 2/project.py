@@ -80,7 +80,21 @@ def check_db_connection() -> bool:
             - Return True if user clicks OK (launch anyway)
             - Return False if user clicks Cancel (exit)
     """
-    return True
+    try:
+        conn = get_connection()
+        close_connection(conn)
+        return True
+    except Exception:
+        root = tk.Tk()
+        root.withdraw()  # hide the empty root window
+        response = messagebox.askokcancel(
+            "Database Connection Failed",
+            "Could not connect to PostgreSQL.\n"
+            "Check your .env settings and ensure PostgreSQL is running.\n\n"
+            "Launch anyway? (DB connect available inside the app)"
+        )
+        root.destroy()
+        return response
 
 
 def check_dependencies() -> bool:
@@ -117,7 +131,6 @@ def check_dependencies() -> bool:
         except ImportError:
             msg = f"Missing dependency: {install_name}. Run: pip install {install_name}"
             print(msg)
-            messagebox.showerror("Missing Dependency", msg)
             return False
     return True
 

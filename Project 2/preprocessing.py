@@ -37,7 +37,7 @@ def get_connection(): #Done
         - Raise a clear error message if connection fails
     """
     try:
-        host = os.getenv("DB_HOST", "localhost")
+        host = "localhost"
         port = os.getenv("DB_PORT", "5432")
         dbname = os.getenv("DB_NAME", "postgres")
         user = os.getenv("DB_USER", "postgres")
@@ -45,7 +45,8 @@ def get_connection(): #Done
         conn = psycopg.connect(
             host=host, port=port,
             dbname=dbname, user=user,
-            password=password
+            password=password,
+            connect_timeout=5 
         )
         logger.info("Connected to PostgreSQL at %s:%s/%s", host, port, dbname)
         return conn
