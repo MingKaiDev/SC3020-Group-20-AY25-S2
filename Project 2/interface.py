@@ -429,7 +429,11 @@ class TpcHAnnotatorApp:
             - Clear existing tree nodes: self.qep_tree.delete(*self.qep_tree.get_children())
             - Call the recursive helper _insert_tree_node("", plan.get("Plan", plan))
         """
-        pass
+        if not hasattr(self, "qep_tree"):
+            return
+
+        self.qep_tree.delete(*self.qep_tree.get_children())
+        self._insert_tree_node("", plan.get("Plan", plan))
 
     def _insert_tree_node(self, parent_id: str, node: dict):
         """
@@ -448,7 +452,15 @@ class TpcHAnnotatorApp:
             - Recurse for each child in node.get("Plans", []):
               self._insert_tree_node(item_id, child)
         """
-        pass
+        node_type = node.get("Node Type", "Unknown")
+        total_cost = node.get("Total Cost", "N/A")
+        plan_rows = node.get("Plan Rows", "N/A")
+
+        label = f"{node_type}  |  cost: {total_cost}  |  rows: {plan_rows}"
+        item_id = self.qep_tree.insert(parent_id, "end", text=label, open=True)
+
+        for child in node.get("Plans", []):
+            self._insert_tree_node(item_id, child)
 
     def _update_status(self, message: str):
         """
