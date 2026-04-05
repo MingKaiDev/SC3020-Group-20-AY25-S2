@@ -355,7 +355,18 @@ class TpcHAnnotatorApp:
             - Clear self.qep_tree (delete all children)
             - Reset self.status_bar to "Ready."
         """
-        pass
+        if hasattr(self, "query_input"):
+            self.query_input.delete("1.0", "end")
+
+        if hasattr(self, "annotation_output"):
+            self.annotation_output.config(state="normal")
+            self.annotation_output.delete("1.0", "end")
+            self.annotation_output.config(state="disabled")
+
+        if hasattr(self, "qep_tree"):
+            self.qep_tree.delete(*self.qep_tree.get_children())
+
+        self._update_status("Ready.")
     
 
 
@@ -384,7 +395,28 @@ class TpcHAnnotatorApp:
             - Insert each item from annotation_result["others"] with "other" tag
             - Disable self.annotation_output again (config state="disabled")
         """
-        pass
+
+        self.annotation_output.config(state="normal")
+        self.annotation_output.delete("1.0", "end")
+
+        self.annotation_output.insert("end", "Original SQL Query\n", "header")
+        self.annotation_output.insert("end", f"{sql}\n\n", "sql")
+
+        self.annotation_output.insert("end", "--- Scan Operations ---\n", "header")
+        for item in annotation_result.get("scans", []):
+            self.annotation_output.insert("end", f"- {item}\n", "scan")
+        self.annotation_output.insert("end", "\n")
+
+        self.annotation_output.insert("end", "--- Join Operations ---\n", "header")
+        for item in annotation_result.get("joins", []):
+            self.annotation_output.insert("end", f"- {item}\n", "join")
+        self.annotation_output.insert("end", "\n")
+
+        self.annotation_output.insert("end", "--- Other Operations ---\n", "header")
+        for item in annotation_result.get("others", []):
+            self.annotation_output.insert("end", f"- {item}\n", "other")
+
+        self.annotation_output.config(state="disabled")
 
     def _populate_qep_tree(self, plan: dict):
         """
