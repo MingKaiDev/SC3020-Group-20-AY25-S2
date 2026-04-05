@@ -157,6 +157,23 @@ class TpcHAnnotatorApp:
               (values=["TPC-H", "IMDB"])
         """
         frame = tk.LabelFrame(parent, text="SQL Query Input")
+
+        lbl = tk.Label(frame, text="Enter SQL query:")
+        lbl.pack(anchor="w", padx=8, pady=(8, 4))
+
+        self.query_input = scrolledtext.ScrolledText(frame, wrap="word", height=15)
+        self.query_input.pack(fill="both", expand=True, padx=8, pady=(0, 8))
+
+        annotate_btn = tk.Button(
+            frame,
+            text="▶ Annotate Query",
+            command=self._run_annotation,
+            bg="#2E86DE",
+            fg="white",
+            font=("Arial", 10, "bold"),
+        )
+        annotate_btn.pack(fill="x", padx=8, pady=(0, 8))
+
         return frame
 
     def _build_middle_panel(self, parent) -> tk.Frame:
@@ -194,6 +211,22 @@ class TpcHAnnotatorApp:
             - Optionally add a "Copy to Clipboard" button
         """
         frame = tk.LabelFrame(parent, text="Annotated Output")
+        self.annotation_output = scrolledtext.ScrolledText(frame, wrap="word", state="disabled", height=18)
+        self.annotation_output.pack(fill="both", expand=True, padx=8, pady=8)
+
+        self.annotation_output.tag_config("sql", foreground="navy")
+        self.annotation_output.tag_config("scan", foreground="green")
+        self.annotation_output.tag_config("join", foreground="darkorange")
+        self.annotation_output.tag_config("other", foreground="grey")
+        self.annotation_output.tag_config("header", foreground="black", font=("Arial", 10, "bold"))
+
+        copy_btn = tk.Button(
+            frame,
+            text="Copy to Clipboard",
+            command=self._copy_output_to_clipboard
+        )
+        copy_btn.pack(fill="x", padx=8, pady=(0, 8))
+
         return frame
 
     def _build_right_panel(self, parent) -> tk.Frame:
@@ -221,6 +254,15 @@ class TpcHAnnotatorApp:
             - Leave population to _populate_qep_tree()
         """
         frame = tk.LabelFrame(parent, text="Query Execution Plan (QEP)")
+
+        self.qep_tree = ttk.Treeview(frame)
+        self.qep_tree.heading("#0", text="Plan Nodes")
+        self.qep_tree.pack(side="left", fill="both", expand=True, padx=(8, 0), pady=8)
+
+        scrollbar = ttk.Scrollbar(frame, orient="vertical", command=self.qep_tree.yview)
+        scrollbar.pack(side="right", fill="y", padx=(0, 8), pady=8)
+        self.qep_tree.configure(yscrollcommand=scrollbar.set)
+
         return frame
 
     def _build_status_bar(self):
@@ -260,16 +302,21 @@ class TpcHAnnotatorApp:
             - On failure: show messagebox.showerror() with the exception message
                           keep self.status_lbl as "● Not connected", fg="red"
         """
-        try:
-            self._update_status("Connecting to database...")
-            self.conn = get_connection()
-            self.status_lbl.config(text = "Connected", fg = "green")
-            self._update_status("Database connected.")
-        except Exception as e:
-            self.conn = None
-            self.status_lbl.config(text="Not Connected", fg = "red")
-            messagebox.showerror("Database Connection Failed", str(e))
-            self._update_status("Ready.")
+        # try:
+        #     self._update_status("Connecting to database...")
+        #     self.conn = get_connection()
+        #     self.status_lbl.config(text = "Connected", fg = "green")
+        #     self._update_status("Database connected.")
+        # except Exception as e:
+        #     self.conn = None
+        #     self.status_lbl.config(text="Not Connected", fg = "red")
+        #     messagebox.showerror("Database Connection Failed", str(e))
+        #     self._update_status("Ready.")
+
+        # Dev mode
+        self.conn = "DEV_MODE"
+        self.status_lbl.config(text="Connected (dev)", fg="green")
+        self._update_status("Dev mode: DB skipped.")
 
     def _run_annotation(self):
         """
@@ -309,6 +356,7 @@ class TpcHAnnotatorApp:
             - Reset self.status_bar to "Ready."
         """
         pass
+    
 
 
 # =============================================================================
@@ -382,4 +430,11 @@ class TpcHAnnotatorApp:
             - Call self.root.update_idletasks() to force immediate UI refresh
               (important so status updates show during long operations)
         """
-        pass
+        self.status_bar.config(text=message)
+        self.root.update_idletasks()
+
+    def _copy_output_to_clipboard(self):
+        text = self.annotation_output.get("1.0", "end-1c")
+        self.root.clipboard_clear()
+        self.root.clipboard_append(text)
+        self._update_status("Annotated output copied to clipboard.")
