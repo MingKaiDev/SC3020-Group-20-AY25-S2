@@ -52,6 +52,7 @@ class TpcHAnnotatorApp:
             - Initialise self.conn = None
             - Call _build_top_bar(), _build_panels(), _build_status_bar()
         """
+        self.root = root
         self.conn = None
         self._build_top_bar()
         self._build_panels()
@@ -77,7 +78,32 @@ class TpcHAnnotatorApp:
             - Add a "Clear All" button (grey background) → calls _clear_all()
             - Pack frame with fill="x", padx=10, pady=5
         """
-        pass
+        top_bar = tk.Frame(self.root)
+        top_bar.pack(fill="x", padx=10, pady=5)
+
+        connect_btn = tk.Button(
+            top_bar,
+            text="Connect to DB",
+            command= self._connect_db,
+            bg="#4CAF50",
+            fg="white"
+        )
+        connect_btn.pack(side="left")
+
+        self.status_lbl = tk.Label(
+            top_bar,
+            text= "Not conected", #success state handled in _connect_db()
+            fg="red"
+        )
+        self.status_lbl.pack(side="left", padx=10)
+
+        clear_btn= tk.Button(
+            top_bar,
+            text= "Clear All",
+            command= self._clear_all,
+            bg="#E0E0E0"
+        )
+        clear_btn.pack(side="right")
 
     def _build_panels(self):
         """
@@ -95,7 +121,16 @@ class TpcHAnnotatorApp:
             - Add each returned frame to the PanedWindow with .add()
             - Set sensible default widths (e.g. 350, 450, 350)
         """
-        pass
+        paned = tk.PanedWindow(self.root, orient="horizontal", sashrelief="raised")
+        paned.pack(fill="both", expand=True, padx=10, pady=(0,10))
+
+        left_panel = self._build_left_panel(paned)
+        middle_panel = self._build_middle_panel(paned)
+        right_panel = self._build_right_panel(paned)
+
+        paned.add(left_panel, width=350)
+        paned.add(middle_panel, width=450)
+        paned.add(right_panel, width=350)
 
     def _build_left_panel(self, parent) -> tk.Frame:
         """
@@ -121,7 +156,8 @@ class TpcHAnnotatorApp:
             - Optionally add a ttk.Combobox for dataset selection
               (values=["TPC-H", "IMDB"])
         """
-        pass
+        frame = tk.LabelFrame(parent, text="SQL Query Input")
+        return frame
 
     def _build_middle_panel(self, parent) -> tk.Frame:
         """
@@ -157,7 +193,8 @@ class TpcHAnnotatorApp:
                                                   font=("Arial", 10, "bold"))
             - Optionally add a "Copy to Clipboard" button
         """
-        pass
+        frame = tk.LabelFrame(parent, text="Annotated Output")
+        return frame
 
     def _build_right_panel(self, parent) -> tk.Frame:
         """
@@ -183,7 +220,8 @@ class TpcHAnnotatorApp:
             - Add a vertical scrollbar linked to the Treeview
             - Leave population to _populate_qep_tree()
         """
-        pass
+        frame = tk.LabelFrame(parent, text="Query Execution Plan (QEP)")
+        return frame
 
     def _build_status_bar(self):
         """
@@ -196,7 +234,14 @@ class TpcHAnnotatorApp:
             - Store as self.status_bar
             - Default text: "Ready."
         """
-        pass
+        self.status_bar = tk.Label(
+            self.root,
+            text="Ready.",
+            relief="sunken",
+            anchor="w",
+            padx=5
+        )
+        self.status_bar.pack(side="bottom", fill="x")
 
 
 # =============================================================================
@@ -215,19 +260,16 @@ class TpcHAnnotatorApp:
             - On failure: show messagebox.showerror() with the exception message
                           keep self.status_lbl as "● Not connected", fg="red"
         """
-        self.conn = get_connection()
-        if self.conn:
-            pass
-        else:
-            root = tk.Tk()
-            root.withdraw()  # hide the empty root window
-            response = messagebox.askokcancel(
-                "Database Connection Failed",
-                "Could not connect to PostgreSQL.\n"
-                "Check your .env settings and ensure PostgreSQL is running.\n"
-            )
-            root.destroy()
-        
+        try:
+            self._update_status("Connecting to database...")
+            self.conn = get_connection()
+            self.status_lbl.config(text = "Connected", fg = "green")
+            self._update_status("Database connected.")
+        except Exception as e:
+            self.conn = None
+            self.status_lbl.config(text="Not Connected", fg = "red")
+            messagebox.showerror("Database Connection Failed", str(e))
+            self._update_status("Ready.")
 
     def _run_annotation(self):
         """
