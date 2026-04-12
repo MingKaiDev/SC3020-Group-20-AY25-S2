@@ -17,6 +17,24 @@ from annotation import generate_annotations
 from dummy_data import get_dummy_qep, get_dummy_aqps, DUMMY_SQL
 
 # =============================================================================
+# SECTION 0: VISUAL TREE CONSTANTS
+# =============================================================================
+
+NODE_W   = 160   # width of each node rectangle
+NODE_H   = 50    # height of each node rectangle
+H_GAP    = 40    # horizontal gap between sibling subtrees
+V_GAP    = 80    # vertical gap between tree levels
+MARGIN_X = 20    # left/top canvas margin
+MARGIN_Y = 20
+
+NODE_COLORS = {
+    "scan":  {"fill": "#D4EDDA", "outline": "#28A745", "text": "#155724"},
+    "join":  {"fill": "#FFF3CD", "outline": "#FFC107", "text": "#856404"},
+    "other": {"fill": "#D6E4F7", "outline": "#5B9BD5", "text": "#1a3a5c"},
+}
+
+
+# =============================================================================
 # SECTION 1: MAIN APPLICATION CLASS
 # =============================================================================
 
@@ -232,43 +250,58 @@ class TpcHAnnotatorApp:
 
     def _build_right_panel(self, parent) -> tk.Frame:
         """
-        Builds the RIGHT panel: QEP tree visualisation.
-
-        Contains:
-            - Label: "Query Execution Plan"
-            - ttk.Treeview widget showing plan nodes as a collapsible tree
-            - Each tree node shows: Node Type + Total Cost
-            - Optional: colour nodes differently by type
-              (scan = green, join = orange, other = grey) 
-
-        Args:
-            parent: The PanedWindow to attach this panel to.
-
-        Returns:
-            tk.LabelFrame: The completed right panel frame.
-
-        TODO:
-            - Create a tk.LabelFrame with text="Query Execution Plan (QEP)"
-            - Add self.qep_tree = ttk.Treeview(...)
-            - Set self.qep_tree.heading("#0", text="Plan Nodes")
-            - Add a vertical scrollbar linked to the Treeview
-            - Leave population to _populate_qep_tree()
+        RIGHT panel: QEP visual canvas tree.
+        Nodes are colour-coded rectangles connected by lines:
+          - Scan  -> green
+          - Join  -> amber
+          - Other -> steel blue
         """
         frame = tk.LabelFrame(parent, text="Query Execution Plan (QEP)")
 
-        self.qep_tree = ttk.Treeview(frame)
-        self.qep_tree.heading("#0", text="Plan Nodes")
-        self.qep_tree.pack(side="left", fill="both", expand=True, padx=(8, 0), pady=8)
+        # --- Colour legend ---
+        legend_bar = tk.Frame(frame, bg="#F0F0F0", relief="flat", bd=1)
+        legend_bar.pack(fill="x", padx=8, pady=(6, 0))
 
-        self.qep_tree.tag_configure("scan", foreground="green")
-        self.qep_tree.tag_configure("join", foreground="darkorange")
-        self.qep_tree.tag_configure("other", foreground="grey")
+        for label, color in [("Scan", "#28A745"), ("Join", "#FFC107"), ("Other", "#5B9BD5")]:
+            box = tk.Frame(legend_bar, bg=color, width=12, height=12)
+            box.pack(side="left", padx=(6, 2), pady=4)
+            tk.Label(legend_bar, text=label, bg="#F0F0F0", font=("Arial", 8)).pack(
+                side="left", padx=(0, 8)
+            )
 
-        scrollbar = ttk.Scrollbar(frame, orient="vertical", command=self.qep_tree.yview)
-        scrollbar.pack(side="right", fill="y", padx=(0, 8), pady=8)
-        self.qep_tree.configure(yscrollcommand=scrollbar.set)
+        # --- Canvas + scrollbars ---
+        canvas_frame = tk.Frame(frame)
+        canvas_frame.pack(fill="both", expand=True, padx=8, pady=8)
+
+        self.qep_canvas = tk.Canvas(canvas_frame, bg="#EEF2F7", highlightthickness=0)
+
+        v_scroll = ttk.Scrollbar(canvas_frame, orient="vertical",   command=self.qep_canvas.yview)
+        h_scroll = ttk.Scrollbar(canvas_frame, orient="horizontal", command=self.qep_canvas.xview)
+
+        self.qep_canvas.configure(
+            yscrollcommand=v_scroll.set,
+            xscrollcommand=h_scroll.set
+        )
+
+        h_scroll.pack(side="bottom", fill="x")
+        v_scroll.pack(side="right",  fill="y")
+        self.qep_canvas.pack(side="left", fill="both", expand=True)
+
+        # Mouse-wheel scrolling
+        self.qep_canvas.bind("<MouseWheel>",       self._on_canvas_mousewheel)
+        self.qep_canvas.bind("<Shift-MouseWheel>", self._on_canvas_shift_mousewheel)
 
         return frame
+
+    def _build_status_bar(self):
+        self.status_bar = tk.Label(
+            self.root,
+            text="Ready.",
+            relief="sunken",
+            anchor="w",
+            padx=5
+        )
+        self.status_bar.pack(side="bottom", fill="x")
 
     def _build_status_bar(self):
         """
@@ -405,15 +438,6 @@ class TpcHAnnotatorApp:
             self._update_status("Ready.")
 
     def _clear_all(self):
-        """
-        Clears all three panels and resets the status bar.
-
-        TODO:
-            - Clear self.query_input (delete "1.0", "end")
-            - Clear self.annotation_output (enable → delete → disable)
-            - Clear self.qep_tree (delete all children)
-            - Reset self.status_bar to "Ready."
-        """
         if hasattr(self, "query_input"):
             self.query_input.delete("1.0", "end")
 
@@ -422,10 +446,17 @@ class TpcHAnnotatorApp:
             self.annotation_output.delete("1.0", "end")
             self.annotation_output.config(state="disabled")
 
-        if hasattr(self, "qep_tree"):
-            self.qep_tree.delete(*self.qep_tree.get_children())
+        if hasattr(self, "qep_canvas"):
+            self.qep_canvas.delete("all")
+            self.qep_canvas.configure(scrollregion=(0, 0, 0, 0))
 
         self._update_status("Ready.")
+
+    def _on_canvas_mousewheel(self, event):
+        self.qep_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+    def _on_canvas_shift_mousewheel(self, event):
+        self.qep_canvas.xview_scroll(int(-1 * (event.delta / 120)), "units")
     
 
 
@@ -477,57 +508,133 @@ class TpcHAnnotatorApp:
 
         self.annotation_output.config(state="disabled")
 
+    # ------------------------------------------------------------------
+    # QEP Visual Tree (Canvas-based)
+    # ------------------------------------------------------------------
+
     def _populate_qep_tree(self, plan: dict):
-        """
-        Recursively populates the QEP Treeview widget with plan nodes.
-
-        Args:
-            plan (dict): The full QEP plan dict (output of get_qep).
-
-        TODO:
-            - Clear existing tree nodes: self.qep_tree.delete(*self.qep_tree.get_children())
-            - Call the recursive helper _insert_tree_node("", plan.get("Plan", plan))
-        """
-        if not hasattr(self, "qep_tree"):
+        """Entry point: clears canvas, computes layout, draws edges then nodes."""
+        if not hasattr(self, "qep_canvas"):
             return
 
-        self.qep_tree.delete(*self.qep_tree.get_children())
-        self._insert_tree_node("", plan.get("Plan", plan))
+        self.qep_canvas.delete("all")
+        root_node = plan.get("Plan", plan)
 
-    def _insert_tree_node(self, parent_id: str, node: dict):
+        nodes_pos, edges = self._layout_tree(root_node)
+
+        # Draw edges first so nodes appear on top
+        for (x1, y1, x2, y2) in edges:
+            self.qep_canvas.create_line(
+                x1, y1, x2, y2,
+                fill="#999999", width=2, smooth=True
+            )
+
+        for (node, cx, cy) in nodes_pos:
+            self._draw_canvas_node(node, cx, cy)
+
+        # Fit scroll region to content
+        self.qep_canvas.update_idletasks()
+        bbox = self.qep_canvas.bbox("all")
+        if bbox:
+            pad = 20
+            self.qep_canvas.configure(
+                scrollregion=(
+                    bbox[0] - pad, bbox[1] - pad,
+                    bbox[2] + pad, bbox[3] + pad
+                )
+            )
+
+    def _subtree_width(self, node: dict) -> float:
+        """Returns the pixel width required to lay out this node's full subtree."""
+        children = node.get("Plans", [])
+        if not children:
+            return NODE_W
+        total = sum(self._subtree_width(c) for c in children)
+        total += H_GAP * (len(children) - 1)
+        return max(NODE_W, total)
+
+    def _layout_tree(self, root_node: dict):
         """
-        Recursive helper to insert a single plan node and its children
-        into the QEP Treeview.
-
-        Args:
-            parent_id (str): Treeview item ID of the parent node ("" for root).
-            node (dict): A single plan node dict.
-
-        TODO:
-            - Build label string:
-              "<Node Type>  |  cost: <Total Cost>  |  rows: <Plan Rows>"
-            - Insert into tree:
-              item_id = self.qep_tree.insert(parent_id, "end", text=label, open=True)
-            - Recurse for each child in node.get("Plans", []):
-              self._insert_tree_node(item_id, child)
+        Two-pass top-down layout.
+        Returns:
+            nodes_pos : list of (node_dict, cx, cy)
+            edges     : list of (x1, y1, x2, y2)
         """
-        node_type = node.get("Node Type", "Unknown")
+        nodes_pos = []
+        edges     = []
+
+        def recurse(node, left_x, top_y):
+            sw = self._subtree_width(node)
+            cx = left_x + sw / 2
+            cy = top_y + NODE_H / 2
+            nodes_pos.append((node, cx, cy))
+
+            children  = node.get("Plans", [])
+            child_left = left_x
+            for child in children:
+                cw       = self._subtree_width(child)
+                child_cx = child_left + cw / 2
+                child_cy = top_y + NODE_H + V_GAP + NODE_H / 2
+                # parent bottom-centre -> child top-centre
+                edges.append((cx, cy + NODE_H / 2, child_cx, child_cy - NODE_H / 2))
+                recurse(child, child_left, top_y + NODE_H + V_GAP)
+                child_left += cw + H_GAP
+
+        recurse(root_node, MARGIN_X, MARGIN_Y)
+        return nodes_pos, edges
+
+    def _draw_canvas_node(self, node: dict, cx: float, cy: float):
+        """Draws a single rounded-rectangle node centred at (cx, cy)."""
+        node_type  = node.get("Node Type", "Unknown")
         total_cost = node.get("Total Cost", "N/A")
-        plan_rows = node.get("Plan Rows", "N/A")
-
-        label = f"{node_type}  |  cost: {total_cost}  |  rows: {plan_rows}"
+        plan_rows  = node.get("Plan Rows",  "N/A")
 
         if "Scan" in node_type:
-            tag = "scan"
+            scheme = NODE_COLORS["scan"]
         elif "Join" in node_type:
-            tag = "join"
+            scheme = NODE_COLORS["join"]
         else:
-            tag = "other"
+            scheme = NODE_COLORS["other"]
 
-        item_id = self.qep_tree.insert(parent_id, "end", text=label, open=True, tags=(tag,))
+        x0 = cx - NODE_W / 2
+        y0 = cy - NODE_H / 2
+        x1 = cx + NODE_W / 2
+        y1 = cy + NODE_H / 2
+        r  = 8  # corner radius
 
-        for child in node.get("Plans", []):
-            self._insert_tree_node(item_id, child)
+        # Rounded rectangle via smooth polygon
+        self.qep_canvas.create_polygon(
+            x0 + r, y0,
+            x1 - r, y0,
+            x1,     y0 + r,
+            x1,     y1 - r,
+            x1 - r, y1,
+            x0 + r, y1,
+            x0,     y1 - r,
+            x0,     y0 + r,
+            fill=scheme["fill"],
+            outline=scheme["outline"],
+            width=2,
+            smooth=True
+        )
+
+        # Node type (bold, upper line)
+        self.qep_canvas.create_text(
+            cx, cy - 9,
+            text=node_type,
+            font=("Arial", 9, "bold"),
+            fill=scheme["text"],
+            width=NODE_W - 10
+        )
+
+        # Cost + rows (smaller, lower line)
+        self.qep_canvas.create_text(
+            cx, cy + 10,
+            text=f"cost: {total_cost}  rows: {plan_rows}",
+            font=("Arial", 7),
+            fill=scheme["text"],
+            width=NODE_W - 10
+        )
 
     def _update_status(self, message: str):
         """
