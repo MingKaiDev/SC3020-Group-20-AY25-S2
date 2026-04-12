@@ -256,6 +256,7 @@ class TpcHAnnotatorApp:
           - Join  -> amber
           - Other -> steel blue
         """
+        
         frame = tk.LabelFrame(parent, text="Query Execution Plan (QEP)")
 
         # --- Colour legend ---
@@ -287,9 +288,14 @@ class TpcHAnnotatorApp:
         v_scroll.pack(side="right",  fill="y")
         self.qep_canvas.pack(side="left", fill="both", expand=True)
 
+        #Set cursor to be fleur
+        self.qep_canvas.config(cursor="fleur")
+
         # Mouse-wheel scrolling
         self.qep_canvas.bind("<MouseWheel>",       self._on_canvas_mousewheel)
         self.qep_canvas.bind("<Shift-MouseWheel>", self._on_canvas_shift_mousewheel)
+        self.qep_canvas.bind("<ButtonPress-1>",    self._on_canvas_drag_start)
+        self.qep_canvas.bind("<B1-Motion>",        self._on_canvas_drag_move)
 
         return frame
 
@@ -457,7 +463,14 @@ class TpcHAnnotatorApp:
 
     def _on_canvas_shift_mousewheel(self, event):
         self.qep_canvas.xview_scroll(int(-1 * (event.delta / 120)), "units")
-    
+
+    def _on_canvas_drag_start(self, event):
+        """Record the starting position when mouse button is pressed."""
+        self.qep_canvas.scan_mark(event.x, event.y)
+
+    def _on_canvas_drag_move(self, event):
+        """Drag the canvas as the mouse moves."""
+        self.qep_canvas.scan_dragto(event.x, event.y, gain=1)
 
 
 # =============================================================================
