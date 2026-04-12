@@ -140,7 +140,7 @@ class TpcHAnnotatorApp:
             - Label: "SQL Query Input"
             - ScrolledText box for typing/pasting SQL
             - "▶ Annotate Query" button → calls _run_annotation()
-            - Optional: dropdown to select dataset (TPC-H / IMDB)
+            - Optional: dropdown to select dataset (TPC-H / IMDB) #note not implemented
 
         Args:
             parent: The PanedWindow to attach this panel to.
@@ -154,7 +154,8 @@ class TpcHAnnotatorApp:
             - Add "▶ Annotate Query" button (blue background, bold font)
               that calls _run_annotation()
             - Optionally add a ttk.Combobox for dataset selection
-              (values=["TPC-H", "IMDB"])
+              (values=["TPC-H", "IMDB"]) #not implemented
+
         """
         frame = tk.LabelFrame(parent, text="SQL Query Input")
 
@@ -238,7 +239,7 @@ class TpcHAnnotatorApp:
             - ttk.Treeview widget showing plan nodes as a collapsible tree
             - Each tree node shows: Node Type + Total Cost
             - Optional: colour nodes differently by type
-              (scan = green, join = orange, other = grey)
+              (scan = green, join = orange, other = grey) 
 
         Args:
             parent: The PanedWindow to attach this panel to.
@@ -258,6 +259,10 @@ class TpcHAnnotatorApp:
         self.qep_tree = ttk.Treeview(frame)
         self.qep_tree.heading("#0", text="Plan Nodes")
         self.qep_tree.pack(side="left", fill="both", expand=True, padx=(8, 0), pady=8)
+
+        self.qep_tree.tag_configure("scan", foreground="green")
+        self.qep_tree.tag_configure("join", foreground="darkorange")
+        self.qep_tree.tag_configure("other", foreground="grey")
 
         scrollbar = ttk.Scrollbar(frame, orient="vertical", command=self.qep_tree.yview)
         scrollbar.pack(side="right", fill="y", padx=(0, 8), pady=8)
@@ -302,23 +307,44 @@ class TpcHAnnotatorApp:
             - On failure: show messagebox.showerror() with the exception message
                           keep self.status_lbl as "● Not connected", fg="red"
         """
+        
+        #note editted mk's original method
+        self._update_status("Connecting to database...")
+        self.conn = get_connection()
+
+        if self.conn:
+            self.status_lbl.config(text="● Connected ✓", fg="green")
+            self._update_status("Database connected.")
+        else:
+            self.status_lbl.config(text="● Not connected", fg="red")
+            root = tk.Tk()
+            root.withdraw()  # hide the empty root window
+            response = messagebox.askokcancel(
+                "Database Connection Failed",
+                "Could not connect to PostgreSQL.\n"
+                "Check your .env settings and ensure PostgreSQL is running.\n"
+            )
+            root.destroy()
+            self._update_status("Ready.")
+
+        #zl method
         # try:
         #     self._update_status("Connecting to database...")
         #     self.conn = get_connection()
-        #     self.status_lbl.config(text = "Connected", fg = "green")
+        #     self.status_lbl.config(text = "● Connected ✓", fg = "green")
         #     self._update_status("Database connected.")
         # except Exception as e:
         #     self.conn = None
-        #     self.status_lbl.config(text="Not Connected", fg = "red")
+        #     self.status_lbl.config(text="● Not connected", fg = "red")
         #     messagebox.showerror("Database Connection Failed", str(e))
         #     self._update_status("Ready.")
 
         # Dev mode
-        self.conn = "DEV_MODE"
-        self.status_lbl.config(text="Connected (dev)", fg="green")
-        self._update_status("Dev mode: DB skipped.")
+        # self.conn = "DEV_MODE"
+        # self.status_lbl.config(text="Connected (dev)", fg="green")
+        # self._update_status("Dev mode: DB skipped.")
 
-    def _run_annotation(self):
+    def _run_annotation(self): #note done. Implemented the actual follow without dummy data
         """
         Handles the "▶ Annotate Query" button click.
         Orchestrates the full pipeline: validate → QEP → AQPs → annotate → display.
@@ -338,12 +364,45 @@ class TpcHAnnotatorApp:
             - Update status bar: "Done."
             - On any exception: show messagebox.showerror(), reset status bar
         """
-        qep    = get_dummy_qep()
-        aqps   = get_dummy_aqps()
-        result = generate_annotations(qep, aqps)
-        self._display_annotations(DUMMY_SQL, result)
-        self._populate_qep_tree(qep)
-        pass
+        # Dummydata
+        # qep = get_dummy_qep()
+        # aqps = get_dummy_aqps()
+        # result = generate_annotations(qep, aqps)
+        # self._display_annotations(DUMMY_SQL, result)
+        # self._populate_qep_tree(qep)
+        # self._update_status("Done.")
+        # return
+
+        try:
+            if not self.conn:
+                messagebox.showwarning("Not Connected", "Please connect to the database first.")
+                self._update_status("Ready.")
+                return
+
+            sql = self.query_input.get("1.0", "end").strip()
+            if not validate_query(sql):
+                messagebox.showwarning(
+                    "Invalid Query",
+                    "Please enter a valid query.",
+                )
+                self._update_status("Ready.")
+                return
+
+            self._update_status("Fetching QEP from PostgreSQL...")
+            qep = get_qep(self.conn, sql)
+
+            self._update_status("Fetching Alternative Query Plans (AQPs)...")
+            aqps = get_all_aqps(self.conn, sql)
+
+            self._update_status("Generating annotations...")
+            result = generate_annotations(qep, aqps)
+
+            self._display_annotations(sql, result)
+            self._populate_qep_tree(qep)
+            self._update_status("Done.")
+        except Exception as e:
+            messagebox.showerror("Annotation Failed", str(e))
+            self._update_status("Ready.")
 
     def _clear_all(self):
         """
@@ -457,7 +516,15 @@ class TpcHAnnotatorApp:
         plan_rows = node.get("Plan Rows", "N/A")
 
         label = f"{node_type}  |  cost: {total_cost}  |  rows: {plan_rows}"
-        item_id = self.qep_tree.insert(parent_id, "end", text=label, open=True)
+
+        if "Scan" in node_type:
+            tag = "scan"
+        elif "Join" in node_type:
+            tag = "join"
+        else:
+            tag = "other"
+
+        item_id = self.qep_tree.insert(parent_id, "end", text=label, open=True, tags=(tag,))
 
         for child in node.get("Plans", []):
             self._insert_tree_node(item_id, child)
