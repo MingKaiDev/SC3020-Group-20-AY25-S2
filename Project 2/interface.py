@@ -11,7 +11,7 @@
 import tkinter as tk
 from tkinter import ttk, scrolledtext, messagebox, font
 from preprocessing import get_connection, close_connection, get_qep, get_all_aqps, validate_query
-from annotation import generate_annotations
+from annotation import generate_annotations, generate_annotations_with_sql
 
 # In _run_annotation() during development, replace pipeline with:
 from dummy_data import get_dummy_qep, get_dummy_aqps, DUMMY_SQL
@@ -434,7 +434,7 @@ class TpcHAnnotatorApp:
             aqps = get_all_aqps(self.conn, sql)
 
             self._update_status("Generating annotations...")
-            result = generate_annotations(qep, aqps)
+            result = generate_annotations_with_sql(qep, aqps, sql)
 
             self._display_annotations(sql, result)
             self._populate_qep_tree(qep)
@@ -477,49 +477,157 @@ class TpcHAnnotatorApp:
 # SECTION 4: DISPLAY HELPERS
 # =============================================================================
 
+    # def _display_annotations(self, sql: str, annotation_result: dict):
+    #     """
+    #     Writes the annotated output to the middle panel with color-coded tags.
+
+    #     Args:
+    #         sql (str): The original SQL query string.
+    #         annotation_result (dict): Output of generate_annotations()
+    #                                   Keys: "scans", "joins", "others", "full_text"
+
+    #     TODO:
+    #         - Enable self.annotation_output (config state="normal")
+    #         - Clear existing content
+    #         - Insert original SQL with "sql" tag
+    #         - Insert "--- Scan Operations ---" header with "header" tag
+    #         - Insert each item from annotation_result["scans"] with "scan" tag
+    #         - Insert "--- Join Operations ---" header with "header" tag
+    #         - Insert each item from annotation_result["joins"] with "join" tag
+    #         - Insert "--- Other Operations ---" header with "header" tag
+    #         - Insert each item from annotation_result["others"] with "other" tag
+    #         - Disable self.annotation_output again (config state="disabled")
+    #     """
+
+    #     self.annotation_output.config(state="normal")
+    #     self.annotation_output.delete("1.0", "end")
+
+    #     self.annotation_output.insert("end", "Original SQL Query\n", "header")
+    #     self.annotation_output.insert("end", f"{sql}\n\n", "sql")
+
+    #     self.annotation_output.insert("end", "--- Scan Operations ---\n", "header")
+    #     for item in annotation_result.get("scans", []):
+    #         self.annotation_output.insert("end", f"- {item}\n", "scan")
+    #     self.annotation_output.insert("end", "\n")
+
+    #     self.annotation_output.insert("end", "--- Join Operations ---\n", "header")
+    #     for item in annotation_result.get("joins", []):
+    #         self.annotation_output.insert("end", f"- {item}\n", "join")
+    #     self.annotation_output.insert("end", "\n")
+
+    #     self.annotation_output.insert("end", "--- Other Operations ---\n", "header")
+    #     for item in annotation_result.get("others", []):
+    #         self.annotation_output.insert("end", f"- {item}\n", "other")
+
+    #     self.annotation_output.config(state="disabled")
+
     def _display_annotations(self, sql: str, annotation_result: dict):
-        """
-        Writes the annotated output to the middle panel with color-coded tags.
+        out = self.annotation_output
+        out.config(state="normal")
+        out.delete("1.0", "end")
 
-        Args:
-            sql (str): The original SQL query string.
-            annotation_result (dict): Output of generate_annotations()
-                                      Keys: "scans", "joins", "others", "full_text"
+        # ── Tag definitions ──────────────────────────────────────────────────────
+        out.tag_config("section_header",
+            foreground="#FFFFFF", background="#3A3A5C",
+            font=("Arial", 10, "bold"),
+            spacing1=6, spacing3=6,     # padding above/below the header line
+            lmargin1=0, lmargin2=0,
+        )
+        out.tag_config("sql",
+            foreground="#1a1aff",
+            font=("Consolas", 10, "bold"),
+            spacing1=1, spacing3=1,
+            lmargin1=10, lmargin2=10,
+        )
+        out.tag_config("clause_note",
+            foreground="#8B4513",
+            font=("Arial", 9, "italic"),
+            spacing1=0, spacing3=4,
+            lmargin1=24, lmargin2=30,   # lmargin2 slightly more to align under "- "
+        )
+        out.tag_config("scan_header",
+            foreground="#1a7a2e",
+            font=("Arial", 10, "bold"),
+            spacing1=10, spacing3=4,
+        )
+        out.tag_config("join_header",
+            foreground="#b35900",
+            font=("Arial", 10, "bold"),
+            spacing1=10, spacing3=4,
+        )
+        out.tag_config("other_header",
+            foreground="#4a4aaa",
+            font=("Arial", 10, "bold"),
+            spacing1=10, spacing3=4,
+        )
+        out.tag_config("scan",
+            foreground="#1a7a2e",
+            font=("Arial", 9),
+            spacing1=2, spacing3=4,
+            lmargin1=14, lmargin2=22,   # hanging indent for wrapped lines
+        )
+        out.tag_config("join",
+            foreground="#b35900",
+            font=("Arial", 9),
+            spacing1=2, spacing3=4,
+            lmargin1=14, lmargin2=22,
+        )
+        out.tag_config("other",
+            foreground="#4a4aaa",
+            font=("Arial", 9),
+            spacing1=2, spacing3=4,
+            lmargin1=14, lmargin2=22,
+        )
+        out.tag_config("divider",
+            foreground="#CCCCCC",
+            spacing1=4, spacing3=4,
+        )
 
-        TODO:
-            - Enable self.annotation_output (config state="normal")
-            - Clear existing content
-            - Insert original SQL with "sql" tag
-            - Insert "--- Scan Operations ---" header with "header" tag
-            - Insert each item from annotation_result["scans"] with "scan" tag
-            - Insert "--- Join Operations ---" header with "header" tag
-            - Insert each item from annotation_result["joins"] with "join" tag
-            - Insert "--- Other Operations ---" header with "header" tag
-            - Insert each item from annotation_result["others"] with "other" tag
-            - Disable self.annotation_output again (config state="disabled")
-        """
+        # ── Section 1: Annotated SQL ─────────────────────────────────────────────
+        out.insert("end", "  Annotated SQL  \n", "section_header")
+        out.insert("end", "\n")
 
-        self.annotation_output.config(state="normal")
-        self.annotation_output.delete("1.0", "end")
+        clause_map = annotation_result.get("clause_map", [])
+        if clause_map:
+            for sql_line, note in clause_map:
+                if not sql_line.strip():
+                    continue
+                out.insert("end", f"{sql_line}\n", "sql")
+                if note:
+                    # Split long notes at " | " so each gets its own ↳ line
+                    for part in note.split(" | "):
+                        out.insert("end", f"    - {part.strip()}\n", "clause_note")
+        else:
+            out.insert("end", sql + "\n", "sql")
 
-        self.annotation_output.insert("end", "Original SQL Query\n", "header")
-        self.annotation_output.insert("end", f"{sql}\n\n", "sql")
+        # ── Section 2: Scan Operations ───────────────────────────────────────────
+        scans = annotation_result.get("scans", [])
+        if scans:
+            out.insert("end", "\n")
+            out.insert("end", "  Scan Operations  \n", "section_header")
+            out.insert("end", "\n")
+            for item in scans:
+                out.insert("end", f"• {item}\n", "scan")
 
-        self.annotation_output.insert("end", "--- Scan Operations ---\n", "header")
-        for item in annotation_result.get("scans", []):
-            self.annotation_output.insert("end", f"- {item}\n", "scan")
-        self.annotation_output.insert("end", "\n")
+        # ── Section 3: Join Operations ───────────────────────────────────────────
+        joins = annotation_result.get("joins", [])
+        if joins:
+            out.insert("end", "\n")
+            out.insert("end", "  Join Operations  \n", "section_header")
+            out.insert("end", "\n")
+            for item in joins:
+                out.insert("end", f"• {item}\n", "join")
 
-        self.annotation_output.insert("end", "--- Join Operations ---\n", "header")
-        for item in annotation_result.get("joins", []):
-            self.annotation_output.insert("end", f"- {item}\n", "join")
-        self.annotation_output.insert("end", "\n")
+        # ── Section 4: Other Operations ──────────────────────────────────────────
+        others = annotation_result.get("others", [])
+        if others:
+            out.insert("end", "\n")
+            out.insert("end", "  Other Operations  \n", "section_header")
+            out.insert("end", "\n")
+            for item in others:
+                out.insert("end", f"• {item}\n", "other")
 
-        self.annotation_output.insert("end", "--- Other Operations ---\n", "header")
-        for item in annotation_result.get("others", []):
-            self.annotation_output.insert("end", f"- {item}\n", "other")
-
-        self.annotation_output.config(state="disabled")
+        out.config(state="disabled")
 
     # ------------------------------------------------------------------
     # QEP Visual Tree (Canvas-based)

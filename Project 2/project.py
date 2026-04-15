@@ -46,9 +46,9 @@ def configure_window(root: tk.Tk):
     root.title("SC3020 Project 2 — SQL Query Annotator")
     screen_w = root.winfo_screenwidth()
     screen_h = root.winfo_screenheight()
-    x = (screen_w // 2) - (1200 // 2)
-    y = (screen_h // 2) - (800 // 2)
-    root.geometry(f"1200x800+{x}+{y}")
+    x = (screen_w // 2) - (1600 // 2)
+    y = (screen_h // 2) - (900 // 2)
+    root.geometry(f"1600x900+{x}+{y}")
     root.minsize(900, 600)
     return root
 

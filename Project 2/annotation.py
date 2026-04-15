@@ -6,6 +6,7 @@
 #   - Generate human-readable annotation strings for each SQL clause/component
 #   - Return a structured annotation result to interface.py
 
+import re
 from preprocessing import parse_plan_nodes, get_root_cost, get_node_cost
 
 from dummy_data import get_dummy_qep, get_dummy_aqps 
@@ -341,11 +342,129 @@ def generate_annotations(qep: dict, aqps: dict) -> dict:
         "scans": scans,
         "joins": joins,
         "others": others,
+        "clause_map": [],
         "full_text": full_text,
     }
 
+def generate_annotations_with_sql(qep: dict, aqps: dict, sql: str) -> dict:
+    """Extended version that also populates clause_map for inline SQL annotation."""
+    result = generate_annotations(qep, aqps)
+    nodes  = parse_plan_nodes(qep)
+    result["clause_map"] = map_sql_clauses(sql, nodes)
+    return result
 # =============================================================================
-# SECTION 7: ENTRY POINT (for quick testing)
+# SECTION 7: SQL CLAUSE-LEVEL ANNOTATION
+# =============================================================================
+
+def map_sql_clauses(sql: str, qep_nodes: list) -> list:
+    """
+    Maps each line of the SQL query to a relevant QEP annotation.
+    Returns list of (original_sql_line, annotation_str_or_None).
+    """
+    _SQL_KEYWORDS = {
+        "select","from","where","join","inner","outer","left","right","cross",
+        "on","and","or","not","as","in","is","null","between","like","exists",
+        "all","any","distinct","having","union","intersect","except","with",
+        "by","asc","desc","case","when","then","else","end","true","false",
+        "limit","offset","group","order","into","count","sum","avg","min","max",
+    }
+
+    lines = sql.splitlines()
+    scan_notes, join_notes, other_map = {}, [], {}
+
+    for node in qep_nodes:
+        ntype = node.get("Node Type", "")
+        table = node.get("Relation Name", "")
+        alias = node.get("Alias", table)
+        index = node.get("Index Name", "")
+
+        if ntype == "Seq Scan":
+            note = f"[{table}] Sequential Scan (no usable index)"
+        elif ntype in ("Index Scan", "Index Only Scan"):
+            note = f"[{table}] {ntype} on '{index}'"
+        elif ntype == "Bitmap Heap Scan":
+            note = f"[{table}] Bitmap Heap Scan"
+        elif ntype == "Bitmap Index Scan":
+            note = f"[{table}] Bitmap Index Scan on '{index}'"
+        elif ntype == "Tid Scan":
+            note = f"[{table}] TID Scan"
+        else:
+            note = None
+
+        if note and table:
+            tl, al = table.lower(), (alias.lower() if alias else table.lower())
+            scan_notes[tl] = note
+            if al != tl:
+                scan_notes[al] = note
+
+        if ntype in ("Hash Join", "Merge Join", "Nested Loop"):
+            cond = (node.get("Hash Cond") or node.get("Merge Cond")
+                    or node.get("Join Filter") or "")
+            join_notes.append((ntype, cond))
+        elif ntype == "Sort":
+            other_map["order"] = f"Sort by: {', '.join(node.get('Sort Key', []))}"
+        elif ntype in ("Aggregate", "Hash Aggregate", "Group Aggregate"):
+            other_map["group"] = f"Aggregation ({node.get('Strategy', ntype)} strategy)"
+        elif ntype == "Limit":
+            other_map["limit"] = "Result limited (LIMIT clause)"
+
+    def _collect(text):
+        found, seen = [], set()
+        for tok in re.findall(r'\b([A-Za-z_][A-Za-z0-9_]*)\b', text):
+            tl = tok.lower()
+            if tl in scan_notes and tl not in _SQL_KEYWORDS:
+                n = scan_notes[tl]
+                if n not in seen:
+                    found.append(n); seen.add(n)
+        return " | ".join(found)
+
+    result, join_idx, in_from = [], 0, False
+
+    for raw_line in lines:
+        sl, annotation = raw_line.strip().lower(), None
+        if not sl:
+            result.append((raw_line, None)); continue
+        fw = sl.split()[0]
+
+        if fw == "select":
+            in_from = False
+        elif fw == "from":
+            in_from = True
+            annotation = _collect(sl) or None
+        elif in_from and fw not in ("where","group","order","having","limit",
+                "join","inner","left","right","cross","union","select","with","on","and","or"):
+            annotation = _collect(sl.lstrip(",")) or None
+        elif "join" in sl and fw not in ("where","on","and","or"):
+            in_from = False
+            parts = []
+            ann = _collect(sl)
+            if ann: parts.append(ann)
+            if join_idx < len(join_notes):
+                jtype, jcond = join_notes[join_idx]; join_idx += 1
+                parts.append(f"→ {jtype}" + (f" on {jcond}" if jcond else ""))
+            annotation = " | ".join(parts) or None
+        elif fw in ("where", "on"):
+            in_from = False
+            if join_idx < len(join_notes):
+                jtype, jcond = join_notes[join_idx]; join_idx += 1
+                annotation = f"→ {jtype}" + (f" on {jcond}" if jcond else "")
+        elif fw in ("and", "or") and join_idx < len(join_notes):
+            jtype, jcond = join_notes[join_idx]; join_idx += 1
+            annotation = f"→ {jtype}" + (f" on {jcond}" if jcond else "")
+        elif fw == "order":
+            in_from = False; annotation = other_map.get("order")
+        elif fw == "group":
+            in_from = False; annotation = other_map.get("group")
+        elif fw == "limit":
+            in_from = False; annotation = other_map.get("limit")
+        else:
+            if fw not in ("having","case","when","then","else","end"):
+                in_from = False
+
+        result.append((raw_line, annotation))
+    return result
+# =============================================================================
+# SECTION 8: ENTRY POINT (for quick testing)
 # =============================================================================
 
 if __name__ == "__main__":
