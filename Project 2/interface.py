@@ -10,6 +10,8 @@
 
 import tkinter as tk
 import re
+import datetime
+
 from tkinter import ttk, scrolledtext, messagebox, font
 from preprocessing import get_connection, close_connection, get_qep, get_all_aqps, validate_query, get_root_cost
 from annotation import generate_annotations, generate_annotations_with_sql
@@ -119,6 +121,7 @@ class TpcHAnnotatorApp:
         self._build_top_bar()
         self._build_panels()
         self._build_status_bar()
+        self._history = []
 
 
 # =============================================================================
@@ -227,15 +230,30 @@ class TpcHAnnotatorApp:
         self.query_input = scrolledtext.ScrolledText(frame, wrap="word", height=15)
         self.query_input.pack(fill="both", expand=True, padx=8, pady=(0, 8))
 
-        annotate_btn = tk.Button(
-            frame,
-            text="▶ Annotate Query",
-            command=self._run_annotation,
-            bg="#2E86DE",
-            fg="white",
-            font=("Arial", 10, "bold"),
+        btn_row = tk.Frame(frame, bg=frame.cget("bg"))
+        btn_row.pack(fill="x", padx=8, pady=(0, 8))
+        btn_row.columnconfigure(0, weight=30)
+        btn_row.columnconfigure(1, weight=70)
+
+        history_btn = tk.Button(
+            btn_row, text="History",
+            command=self._open_history_window,
+            bg="#6C757D", fg="white",
+            font=("Arial", 9),
+            relief="flat", padx=4, pady=7,
+            cursor="hand2"
         )
-        annotate_btn.pack(fill="x", padx=8, pady=(0, 8))
+        history_btn.grid(row=0, column=0, sticky="ew", padx=(0, 4))
+
+        annotate_btn = tk.Button(
+            btn_row, text="  Annotate Query",
+            command=self._run_annotation,
+            bg="#2E86DE", fg="white",
+            font=("Arial", 10, "bold"),
+            relief="flat", padx=8, pady=7,
+            cursor="hand2"
+        )
+        annotate_btn.grid(row=0, column=1, sticky="ew")
 
         return frame
 
@@ -489,6 +507,13 @@ class TpcHAnnotatorApp:
             self._last_chart_data = (qep_cost, aqps)
             self._draw_cost_chart(qep_cost, aqps)
             self._update_status("Done.")
+            self._history.append({
+                "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "sql":       sql,
+                "scans":     result.get("scans", []),
+                "joins":     result.get("joins", []),
+                "others":    result.get("others", []),
+            })
         except Exception as e:
             messagebox.showerror("Annotation Failed", str(e))
             self._update_status("Ready.")
@@ -981,3 +1006,197 @@ class TpcHAnnotatorApp:
         self.root.clipboard_clear()
         self.root.clipboard_append(text)
         self._update_status("Annotated output copied to clipboard.")
+
+    def _open_history_window(self):
+        """Opens a popup window showing all past annotation runs."""
+        win = tk.Toplevel(self.root)
+        win.title("Annotation History")
+        win.geometry("700x500")
+        win.minsize(500, 350)
+        win.grab_set()   # modal — blocks interaction with main window until closed
+
+        # ── Top label ────────────────────────────────────────────────────────
+        header = tk.Frame(win, bg="#3A3A5C", pady=6)
+        header.pack(fill="x")
+        tk.Label(header, text=f"Annotation History  ({len(self._history)} runs)",
+                bg="#3A3A5C", fg="white",
+                font=("Arial", 10, "bold")).pack(side="left", padx=12)
+
+        if not self._history:
+            tk.Label(win, text="No queries have been annotated yet.",
+                    fg="#888888", font=("Arial", 10, "italic")).pack(
+                        expand=True)
+            return
+
+        # ── Left: scrollable list of runs ────────────────────────────────────
+        pane = tk.PanedWindow(win, orient="horizontal", sashwidth=4,
+                            sashrelief="flat", bg="#CCCCCC")
+        pane.pack(fill="both", expand=True, padx=0, pady=0)
+
+        list_frame = tk.Frame(pane, bg="#F5F5F5")
+        pane.add(list_frame, width=220)
+
+        tk.Label(list_frame, text="Runs", bg="#F5F5F5",
+                font=("Arial", 9, "bold"), fg="#555555",
+                pady=4).pack(fill="x", padx=8)
+
+        list_canvas = tk.Canvas(list_frame, bg="#F5F5F5",
+                                highlightthickness=0)
+        list_scroll = ttk.Scrollbar(list_frame, orient="vertical",
+                                    command=list_canvas.yview)
+        list_canvas.configure(yscrollcommand=list_scroll.set)
+        list_scroll.pack(side="right", fill="y")
+        list_canvas.pack(side="left", fill="both", expand=True)
+
+        inner = tk.Frame(list_canvas, bg="#F5F5F5")
+        list_canvas.create_window((0, 0), window=inner, anchor="nw")
+        inner.bind("<Configure>",
+                lambda e: list_canvas.configure(
+                    scrollregion=list_canvas.bbox("all")))
+
+        # ── Right: detail panel ───────────────────────────────────────────────
+        detail_frame = tk.Frame(pane, bg="white")
+        pane.add(detail_frame)
+
+        detail_text = scrolledtext.ScrolledText(
+            detail_frame, wrap="word", state="disabled",
+            font=("Arial", 9), bg="white", relief="flat",
+            padx=10, pady=8
+        )
+        detail_text.pack(fill="both", expand=True)
+
+        # Tags for detail panel
+        detail_text.tag_config("ts",
+            foreground="#888888", font=("Arial", 8, "italic"))
+        detail_text.tag_config("sql_block",
+            foreground="#1a1aff", font=("Consolas", 9),
+            lmargin1=10, lmargin2=10, spacing3=2)
+        detail_text.tag_config("sec",
+            foreground="white", background="#3A3A5C",
+            font=("Arial", 9, "bold"),
+            spacing1=6, spacing3=4)
+        detail_text.tag_config("scan", foreground="#1a7a2e",
+            font=("Arial", 9), lmargin1=12, lmargin2=20, spacing3=3)
+        detail_text.tag_config("join", foreground="#b35900",
+            font=("Arial", 9), lmargin1=12, lmargin2=20, spacing3=3)
+        detail_text.tag_config("other", foreground="#4a4aaa",
+            font=("Arial", 9), lmargin1=12, lmargin2=20, spacing3=3)
+
+        selected_btn = [None]   # mutable ref for currently highlighted button
+
+        def show_entry(idx):
+            """Populate the right panel with history entry [idx]."""
+            entry = self._history[idx]
+
+            # Highlight selected run button
+            if selected_btn[0]:
+                selected_btn[0].config(bg="#F5F5F5", fg="#222222")
+            selected_btn[0] = run_buttons[idx]
+            run_buttons[idx].config(bg="#3A3A5C", fg="white")
+
+            detail_text.config(state="normal")
+            detail_text.delete("1.0", "end")
+
+            # Timestamp
+            detail_text.insert("end",
+                f"Run {idx + 1}  —  {entry['timestamp']}\n", "ts")
+            detail_text.insert("end", "\n")
+
+            # SQL block
+            detail_text.insert("end", "  SQL Query  \n", "sec")
+            detail_text.insert("end", "\n")
+            detail_text.insert("end",
+                entry["sql"].strip() + "\n", "sql_block")
+
+            # Scans
+            if entry["scans"]:
+                detail_text.insert("end", "\n")
+                detail_text.insert("end", "  Scan Operations  \n", "sec")
+                detail_text.insert("end", "\n")
+                for s in entry["scans"]:
+                    detail_text.insert("end", f"• {s}\n", "scan")
+
+            # Joins
+            if entry["joins"]:
+                detail_text.insert("end", "\n")
+                detail_text.insert("end", "  Join Operations  \n", "sec")
+                detail_text.insert("end", "\n")
+                for j in entry["joins"]:
+                    detail_text.insert("end", f"• {j}\n", "join")
+
+            # Others
+            if entry["others"]:
+                detail_text.insert("end", "\n")
+                detail_text.insert("end", "  Other Operations  \n", "sec")
+                detail_text.insert("end", "\n")
+                for o in entry["others"]:
+                    detail_text.insert("end", f"• {o}\n", "other")
+
+            detail_text.config(state="disabled")
+
+        def restore_entry(idx):
+            """Load the SQL of this history entry back into the query input."""
+            sql = self._history[idx]["sql"]
+            self.query_input.delete("1.0", "end")
+            self.query_input.insert("1.0", sql)
+            win.destroy()
+            self._update_status(f"Restored query from history run {idx + 1}.")
+
+        # ── Build run buttons in list panel ──────────────────────────────────
+        run_buttons = []
+        for i, entry in enumerate(reversed(self._history)):
+            real_idx = len(self._history) - 1 - i   # newest first
+            sql_preview = entry["sql"].strip()
+            sql_preview = (sql_preview[:38] + "...") \
+                        if len(sql_preview) > 38 else sql_preview
+
+            btn_frame = tk.Frame(inner, bg="#F5F5F5")
+            btn_frame.pack(fill="x", padx=4, pady=2)
+
+            run_btn = tk.Button(
+                btn_frame,
+                text=f"#{real_idx + 1}  {sql_preview}",
+                anchor="w",
+                wraplength=180,
+                justify="left",
+                bg="#F5F5F5", fg="#222222",
+                font=("Arial", 8),
+                relief="flat", pady=4, padx=6,
+                cursor="hand2",
+                command=lambda idx=real_idx: show_entry(idx)
+            )
+            run_btn.pack(side="left", fill="x", expand=True)
+
+            # Small "restore" button
+            restore_btn = tk.Button(
+                btn_frame, text="<<",
+                bg="#F5F5F5", fg="#2E86DE",
+                font=("Arial", 7), relief="flat",
+                cursor="hand2", padx=2,
+                command=lambda idx=real_idx: restore_entry(idx)
+            )
+            restore_btn.pack(side="right")
+
+            run_buttons.insert(0, run_btn)   # keep index aligned
+
+        # ── Footer: clear history button ─────────────────────────────────────
+        footer = tk.Frame(win, bg="#F0F0F0", pady=4)
+        footer.pack(fill="x", side="bottom")
+        tk.Button(
+            footer, text="Clear All History",
+            command=lambda: [self._history.clear(), win.destroy()],
+            bg="#E74C3C", fg="white",
+            font=("Arial", 8), relief="flat",
+            padx=8, pady=4, cursor="hand2"
+        ).pack(side="right", padx=10)
+        tk.Button(
+            footer, text="Close",
+            command=win.destroy,
+            bg="#6C757D", fg="white",
+            font=("Arial", 8), relief="flat",
+            padx=8, pady=4, cursor="hand2"
+        ).pack(side="right", padx=(0, 4))
+
+        # Auto-select the most recent entry
+        if self._history:
+            show_entry(len(self._history) - 1)
