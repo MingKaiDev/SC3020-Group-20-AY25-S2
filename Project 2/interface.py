@@ -13,11 +13,8 @@ import re
 import datetime
 
 from tkinter import ttk, scrolledtext, messagebox, font
-from preprocessing import get_connection, close_connection, get_qep, get_all_aqps, validate_query, get_root_cost
-from annotation import generate_annotations, generate_annotations_with_sql
-
-# In _run_annotation() during development, replace pipeline with:
-from dummy_data import get_dummy_qep, get_dummy_aqps, DUMMY_SQL
+from preprocessing import get_connection, get_qep, get_all_aqps, validate_query, get_root_cost
+from annotation import generate_annotations_with_sql
 
 # =============================================================================
 # SECTION 0: VISUAL TREE CONSTANTS
@@ -82,12 +79,12 @@ _SQL_TOKEN_RE = re.compile(
 )
 NODE_TOOLTIPS = {
     # Scans
-    "Seq Scan":          "Sequential Scan: Reads every row in the table from disk, top to bottom.\nUsed when no useful index exists or when most rows are needed.",
+    "Seq Scan":          "Sequential Scan: Reads every row in the table from disk from top to bottom.\n It is used when no useful index exists or when most rows are needed.",
     "Index Scan":        "Index Scan: Uses a B-tree index to find matching rows directly.\nFaster than Seq Scan when only a small fraction of rows match.",
     "Index Only Scan":   "Index Only Scan: Like Index Scan but reads data directly from the index\nwithout touching the main table. Very fast for covered queries.",
     "Bitmap Heap Scan":  "Bitmap Heap Scan: First builds a bitmap of matching row locations,\nthen fetches those rows. Good for medium-selectivity conditions.",
     "Bitmap Index Scan": "Bitmap Index Scan: Scans the index to build a bitmap of row locations.\nAlways paired with a Bitmap Heap Scan above it.",
-    "Tid Scan":          "TID Scan: Fetches rows by their physical tuple ID.\nRare — only used when the query references ctid directly.",
+    "Tid Scan":          "TID Scan: Fetches rows by their physical tuple ID.\nOnly used when the query references ctid directly.",
 
     # Joins
     "Hash Join":         "Hash Join: Builds a hash table from the smaller input, then probes\nit with each row from the larger input. Best for large unsorted tables.",
@@ -95,16 +92,16 @@ NODE_TOOLTIPS = {
     "Nested Loop":       "Nested Loop: For each row in the outer input, scans the inner input.\nFast when the inner side is small or accessed via index.",
 
     # Aggregation
-    "Aggregate":         "Aggregate: Computes aggregate functions (COUNT, SUM, AVG etc.)\nover all input rows — no grouping.",
+    "Aggregate":         "Aggregate: Computes aggregate functions (COUNT, SUM, AVG etc.)\nover all input rows with no grouping.",
     "Hash Aggregate":    "Hash Aggregate: Groups rows using a hash table.\nGood for GROUP BY when the number of groups fits in memory.",
-    "Group Aggregate":   "Group Aggregate: Groups pre-sorted rows sequentially.\nRequires input to be sorted on GROUP BY keys — often follows a Sort.",
+    "Group Aggregate":   "Group Aggregate: Groups pre-sorted rows sequentially.\nRequires input to be sorted on GROUP BY keys that often follows a Sort.",
 
     # Sorting / Limiting
-    "Sort":              "Sort: Orders rows by the specified keys.\nExpensive for large inputs — may spill to disk if memory is limited.",
-    "Limit":             "Limit: Stops execution after N rows are produced.\nEnables early termination — saves cost when combined with ORDER BY.",
+    "Sort":              "Sort: Orders rows by the specified keys.\nExpensive for large inputs which may spill to disk if memory is limited.",
+    "Limit":             "Limit: Stops execution after N rows are produced.\nEnables early termination that saves cost when combined with ORDER BY.",
 
     # Misc
-    "Unique":            "Unique: Removes consecutive duplicate rows.\nUsed for DISTINCT or UNION — requires sorted input.",
+    "Unique":            "Unique: Removes consecutive duplicate rows.\nUsed for DISTINCT or UNION when it requires sorted input.",
     "Hash":              "Hash: Builds a hash table from its input.\nAlways appears as the inner child of a Hash Join.",
     "Materialize":       "Materialize: Caches its input rows in memory (or disk).\nPrevents re-scanning the same subplan multiple times.",
     "Gather":            "Gather: Collects results from parallel worker processes\ninto a single stream for the main process.",
@@ -182,12 +179,6 @@ class TpcHAnnotatorApp:
     │   SQL Input     │  Annotated Output    │   QEP Tree      │
     │   (Left Panel)  │  (Middle Panel)      │  (Right Panel)  │
     └─────────────────┴──────────────────────┴─────────────────┘
-
-    TODO:
-        - Call self._build_top_bar() in __init__
-        - Call self._build_panels() in __init__
-        - Call self._build_status_bar() in __init__
-        - Initialise self.conn = None in __init__
     """
 
     def __init__(self, root: tk.Tk):
@@ -196,13 +187,6 @@ class TpcHAnnotatorApp:
 
         Args:
             root (tk.Tk): The root Tkinter window passed from project.py.
-
-        TODO:
-            - Set window title: "SC3020 Project 2 — SQL Query Annotator"
-            - Set window size: root.geometry("1200x800")
-            - Set minimum size: root.minsize(900, 600)
-            - Initialise self.conn = None
-            - Call _build_top_bar(), _build_panels(), _build_status_bar()
         """
         self.root = root
         self.conn = None
@@ -223,13 +207,6 @@ class TpcHAnnotatorApp:
             - Connection status label      → shows "Connected ✓" or "Not connected"
             - "Clear All" button           → calls _clear_all()
             - Optional: DB name label      → shows which DB is connected
-
-        TODO:
-            - Create a tk.Frame at the top of self.root
-            - Add a "Connect to DB" button (green background)
-            - Add self.status_lbl (tk.Label) — default text "● Not connected", red
-            - Add a "Clear All" button (grey background) → calls _clear_all()
-            - Pack frame with fill="x", padx=10, pady=5
         """
         top_bar = tk.Frame(self.root)
         top_bar.pack(fill="x", padx=10, pady=5)
@@ -1075,7 +1052,7 @@ class TpcHAnnotatorApp:
 
         for item_id in self.qep_canvas.find_overlapping(x0, y0, x1, y1):
             self._canvas_tooltip.register(item_id, tip_text)
-            
+
     def _update_status(self, message: str):
         """
         Updates the bottom status bar with a new message.
