@@ -9,8 +9,9 @@
 #   - Handle and display errors gracefully to the user
 
 import tkinter as tk
+import re
 from tkinter import ttk, scrolledtext, messagebox, font
-from preprocessing import get_connection, close_connection, get_qep, get_all_aqps, validate_query
+from preprocessing import get_connection, close_connection, get_qep, get_all_aqps, validate_query, get_root_cost
 from annotation import generate_annotations, generate_annotations_with_sql
 
 # In _run_annotation() during development, replace pipeline with:
@@ -33,7 +34,50 @@ NODE_COLORS = {
     "other": {"fill": "#D6E4F7", "outline": "#5B9BD5", "text": "#1a3a5c"},
 }
 
+# ── AQP bar-chart colour palette ─────────────────────────────────────────────
+_CHART_COLORS = {
+    "qep":          "#28A745",
+    "no_hashjoin":  "#5B9BD5",
+    "no_mergejoin": "#FFC107",
+    "no_nestloop":  "#E74C3C",
+    "no_seqscan":   "#9B59B6",
+    "no_indexscan": "#E67E22",
+}
+_CHART_LABELS = {
+    "qep":          "QEP (chosen)",
+    "no_hashjoin":  "No Hash Join",
+    "no_mergejoin": "No Merge Join",
+    "no_nestloop":  "No Nested Loop",
+    "no_seqscan":   "No Seq Scan",
+    "no_indexscan": "No Index Scan",
+}
 
+# ── SQL syntax highlighting token definitions ─────────────────────────────────
+_SQL_KEYWORDS = {
+    'select','from','where','join','inner','outer','left','right','cross',
+    'full','on','and','or','not','as','in','is','null','between','like',
+    'exists','all','any','distinct','having','union','intersect','except',
+    'with','by','asc','desc','case','when','then','else','end','true',
+    'false','limit','offset','group','order','into','over','partition',
+    'rows','range','unbounded','preceding','following','current','row',
+    'filter','cast','date','interval','timestamp',
+}
+_SQL_FUNCTIONS = {
+    'count','sum','avg','min','max','coalesce','nullif','cast','extract',
+    'date_trunc','now','current_date','current_timestamp','substring',
+    'trim','upper','lower','length','concat','replace','round','floor',
+    'ceil','abs','mod','power','sqrt','to_date','to_char','isnull','nvl',
+}
+_SQL_TOKEN_RE = re.compile(
+    r"(?P<string>'[^']*')"
+    r"|(?P<number>\b\d+(?:\.\d+)?\b)"
+    r"|(?P<operator>>=|<=|<>|!=|[=<>*])"
+    r"|(?P<word>[A-Za-z_][A-Za-z0-9_]*)"
+    r"|(?P<dot>\.)"
+    r"|(?P<punct>[(),;])"
+    r"|(?P<ws>\s+)"
+    r"|(?P<other>.)"
+)
 # =============================================================================
 # SECTION 1: MAIN APPLICATION CLASS
 # =============================================================================
@@ -249,53 +293,56 @@ class TpcHAnnotatorApp:
         return frame
 
     def _build_right_panel(self, parent) -> tk.Frame:
-        """
-        RIGHT panel: QEP visual canvas tree.
-        Nodes are colour-coded rectangles connected by lines:
-          - Scan  -> green
-          - Join  -> amber
-          - Other -> steel blue
-        """
-        
         frame = tk.LabelFrame(parent, text="Query Execution Plan (QEP)")
 
-        # --- Colour legend ---
+        # ── Colour legend ────────────────────────────────────────────────────
         legend_bar = tk.Frame(frame, bg="#F0F0F0", relief="flat", bd=1)
         legend_bar.pack(fill="x", padx=8, pady=(6, 0))
-
         for label, color in [("Scan", "#28A745"), ("Join", "#FFC107"), ("Other", "#5B9BD5")]:
             box = tk.Frame(legend_bar, bg=color, width=12, height=12)
             box.pack(side="left", padx=(6, 2), pady=4)
-            tk.Label(legend_bar, text=label, bg="#F0F0F0", font=("Arial", 8)).pack(
-                side="left", padx=(0, 8)
-            )
+            tk.Label(legend_bar, text=label, bg="#F0F0F0",
+                    font=("Arial", 8)).pack(side="left", padx=(0, 8))
 
-        # --- Canvas + scrollbars ---
-        canvas_frame = tk.Frame(frame)
-        canvas_frame.pack(fill="both", expand=True, padx=8, pady=8)
+        # ── Notebook with 2 tabs ─────────────────────────────────────────────
+        notebook = ttk.Notebook(frame)
+        notebook.pack(fill="both", expand=True, padx=8, pady=(4, 8))
 
+        # ── Tab 1: QEP Tree (your existing canvas code) ──────────────────────
+        tree_tab = tk.Frame(notebook)
+        notebook.add(tree_tab, text="  QEP Tree  ")
+
+        canvas_frame = tk.Frame(tree_tab)
+        canvas_frame.pack(fill="both", expand=True)
         self.qep_canvas = tk.Canvas(canvas_frame, bg="#EEF2F7", highlightthickness=0)
-
-        v_scroll = ttk.Scrollbar(canvas_frame, orient="vertical",   command=self.qep_canvas.yview)
-        h_scroll = ttk.Scrollbar(canvas_frame, orient="horizontal", command=self.qep_canvas.xview)
-
-        self.qep_canvas.configure(
-            yscrollcommand=v_scroll.set,
-            xscrollcommand=h_scroll.set
-        )
-
-        h_scroll.pack(side="bottom", fill="x")
-        v_scroll.pack(side="right",  fill="y")
+        vscroll = ttk.Scrollbar(canvas_frame, orient="vertical",
+                                command=self.qep_canvas.yview)
+        hscroll = ttk.Scrollbar(canvas_frame, orient="horizontal",
+                                command=self.qep_canvas.xview)
+        self.qep_canvas.configure(yscrollcommand=vscroll.set,
+                                xscrollcommand=hscroll.set)
+        hscroll.pack(side="bottom", fill="x")
+        vscroll.pack(side="right",  fill="y")
         self.qep_canvas.pack(side="left", fill="both", expand=True)
-
-        #Set cursor to be fleur
         self.qep_canvas.config(cursor="fleur")
-
-        # Mouse-wheel scrolling
         self.qep_canvas.bind("<MouseWheel>",       self._on_canvas_mousewheel)
         self.qep_canvas.bind("<Shift-MouseWheel>", self._on_canvas_shift_mousewheel)
         self.qep_canvas.bind("<ButtonPress-1>",    self._on_canvas_drag_start)
         self.qep_canvas.bind("<B1-Motion>",        self._on_canvas_drag_move)
+
+        # ── Tab 2: AQP Cost Chart ────────────────────────────────────────────
+        chart_tab = tk.Frame(notebook, bg="white")
+        notebook.add(chart_tab, text="  Cost Chart  ")
+
+        self.cost_canvas = tk.Canvas(chart_tab, bg="white", highlightthickness=0)
+        self.cost_canvas.pack(fill="both", expand=True, padx=4, pady=4)
+        # Redraw on resize so bars scale to available width
+        self.cost_canvas.bind(
+            "<Configure>",
+            lambda e: self._redraw_chart_on_resize()
+        )
+        # Store latest chart data so resize can redraw
+        self._last_chart_data = None
 
         return frame
 
@@ -438,6 +485,9 @@ class TpcHAnnotatorApp:
 
             self._display_annotations(sql, result)
             self._populate_qep_tree(qep)
+            qep_cost = get_root_cost(qep)
+            self._last_chart_data = (qep_cost, aqps)
+            self._draw_cost_chart(qep_cost, aqps)
             self._update_status("Done.")
         except Exception as e:
             messagebox.showerror("Annotation Failed", str(e))
@@ -476,6 +526,37 @@ class TpcHAnnotatorApp:
 # =============================================================================
 # SECTION 4: DISPLAY HELPERS
 # =============================================================================
+
+    def _insert_highlighted_sql(self, widget, line: str):
+        """
+        Inserts one SQL line into `widget` with token-level syntax highlighting.
+        Uses character-level tags applied token by token.
+        """
+        for m in _SQL_TOKEN_RE.finditer(line):
+            kind = m.lastgroup
+            text = m.group()
+
+            if kind == 'string':
+                tag = 'sql_str'
+            elif kind == 'number':
+                tag = 'sql_num'
+            elif kind == 'operator':
+                tag = 'sql_op'
+            elif kind == 'word':
+                lower = text.lower()
+                if lower in _SQL_KEYWORDS:
+                    tag = 'sql_kw'
+                elif lower in _SQL_FUNCTIONS:
+                    tag = 'sql_fn'
+                else:
+                    tag = 'sql_ident'
+            elif kind in ('dot', 'punct'):
+                tag = 'sql_punct'
+            else:
+                tag = 'sql_ws'
+
+            widget.insert("end", text, tag)
+        widget.insert("end", "\n")
 
     # def _display_annotations(self, sql: str, annotation_result: dict):
     #     """
@@ -533,10 +614,44 @@ class TpcHAnnotatorApp:
             spacing1=6, spacing3=6,     # padding above/below the header line
             lmargin1=0, lmargin2=0,
         )
-        out.tag_config("sql",
-            foreground="#1a1aff",
+        out.tag_config("sql_kw",
+            foreground="#0000CC",               # bold blue  — SELECT, FROM, WHERE…
             font=("Consolas", 10, "bold"),
             spacing1=1, spacing3=1,
+            lmargin1=10, lmargin2=10,
+        )
+        out.tag_config("sql_fn",
+            foreground="#7B2FBE",               # purple — SUM, COUNT, AVG…
+            font=("Consolas", 10, "bold"),
+            lmargin1=10, lmargin2=10,
+        )
+        out.tag_config("sql_ident",
+            foreground="#1a1a1a",               # near-black — table/column names
+            font=("Consolas", 10),
+            lmargin1=10, lmargin2=10,
+        )
+        out.tag_config("sql_str",
+            foreground="#2E7D32",               # dark green — 'string literals'
+            font=("Consolas", 10),
+            lmargin1=10, lmargin2=10,
+        )
+        out.tag_config("sql_num",
+            foreground="#E65100",               # burnt orange — numbers
+            font=("Consolas", 10),
+            lmargin1=10, lmargin2=10,
+        )
+        out.tag_config("sql_op",
+            foreground="#00838F",               # teal — = > < * operators
+            font=("Consolas", 10, "bold"),
+            lmargin1=10, lmargin2=10,
+        )
+        out.tag_config("sql_punct",
+            foreground="#555555",               # grey — ( ) , . ;
+            font=("Consolas", 10),
+            lmargin1=10, lmargin2=10,
+        )
+        out.tag_config("sql_ws",
+            font=("Consolas", 10),
             lmargin1=10, lmargin2=10,
         )
         out.tag_config("clause_note",
@@ -592,7 +707,7 @@ class TpcHAnnotatorApp:
             for sql_line, note in clause_map:
                 if not sql_line.strip():
                     continue
-                out.insert("end", f"{sql_line}\n", "sql")
+                self._insert_highlighted_sql(out, sql_line)
                 if note:
                     # Split long notes at " | " so each gets its own ↳ line
                     for part in note.split(" | "):
@@ -704,6 +819,89 @@ class TpcHAnnotatorApp:
         recurse(root_node, MARGIN_X, MARGIN_Y)
         return nodes_pos, edges
 
+    def _draw_cost_chart(self, qep_cost: float, aqps: dict):
+        """Draws a horizontal bar chart of QEP vs AQP costs on self.cost_canvas."""
+        c = self.cost_canvas
+        c.delete("all")
+        c.update_idletasks()
+        W = c.winfo_width()  or 380
+        H = c.winfo_height() or 300
+
+        # Build ordered rows: QEP first, then each AQP
+        rows = [("qep", _CHART_LABELS["qep"], qep_cost,
+                _CHART_COLORS["qep"])]
+        for key, plan in aqps.items():
+            cost  = get_root_cost(plan) if plan else float("inf")
+            label = _CHART_LABELS.get(key, key)
+            color = _CHART_COLORS.get(key, "#888888") \
+                    if cost != float("inf") else "#CCCCCC"
+            rows.append((key, label, cost, color))
+
+        PAD_L, PAD_R = 130, 70
+        PAD_T, PAD_B = 38, 28
+        chart_w = W - PAD_L - PAD_R
+        n       = len(rows)
+        bar_h   = max(14, min(30, (H - PAD_T - PAD_B) // n - 8))
+        row_h   = bar_h + 10
+
+        finite  = [r[2] for r in rows if r[2] != float("inf")]
+        max_val = max(finite) * 1.1 if finite else 1.0
+
+        # Title
+        c.create_text(W // 2, 14,
+            text="QEP vs AQP  —  Total Cost",
+            font=("Arial", 9, "bold"), fill="#1a1a2e")
+
+        # Grid lines + x-axis labels
+        NUM_GRID = 4
+        for i in range(NUM_GRID + 1):
+            gx  = PAD_L + int(chart_w * i / NUM_GRID)
+            gy1 = PAD_T - 4
+            gy2 = PAD_T + row_h * n + 4
+            c.create_line(gx, gy1, gx, gy2, fill="#E0E0E0", dash=(3, 3))
+            c.create_text(gx, gy2 + 10, text=f"{max_val * i / NUM_GRID:,.0f}",
+                        font=("Arial", 7), fill="#AAAAAA", anchor="n")
+
+        # Bars
+        for idx, (key, label, cost, color) in enumerate(rows):
+            yt  = PAD_T + idx * row_h
+            ym  = yt + bar_h // 2
+            fw  = "bold" if key == "qep" else "normal"
+
+            # Row label
+            c.create_text(PAD_L - 6, ym, text=label,
+                        font=("Arial", 8, fw), fill="#222222", anchor="e")
+
+            if cost == float("inf"):
+                c.create_rectangle(PAD_L, yt + 2, PAD_L + 50, yt + bar_h - 2,
+                                    fill="#E0E0E0", outline="")
+                c.create_text(PAD_L + 56, ym,
+                            text="N/A", font=("Arial", 7, "italic"),
+                            fill="#AAAAAA", anchor="w")
+            else:
+                bar_w = max(4, int(chart_w * cost / max_val))
+                # Bar body
+                c.create_rectangle(PAD_L, yt + 2, PAD_L + bar_w, yt + bar_h - 2,
+                                    fill=color, outline="")
+                # Left accent stripe (darker)
+                r, g, b = (int(color.lstrip("#")[i:i+2], 16) for i in (0, 2, 4))
+                dark = f"#{int(r*.65):02x}{int(g*.65):02x}{int(b*.65):02x}"
+                c.create_rectangle(PAD_L, yt + 2, PAD_L + 4, yt + bar_h - 2,
+                                    fill=dark, outline="")
+                # Cost value label
+                c.create_text(PAD_L + bar_w + 5, ym - 4,
+                            text=f"{cost:,.1f}",
+                            font=("Arial", 7, "bold" if key == "qep" else "normal"),
+                            fill="#333333", anchor="w")
+                # Ratio label (for AQPs only)
+                if key != "qep" and qep_cost > 0 and cost != float("inf"):
+                    ratio = cost / qep_cost
+                    rtxt  = f"+{(ratio-1)*100:.0f}%" if ratio >= 1 else f"-{(1-ratio)*100:.0f}%"
+                    rcol  = "#CC0000" if ratio > 1.005 else "#28A745"
+                    c.create_text(PAD_L + bar_w + 5, ym + 6,
+                                text=rtxt, font=("Arial", 7, "italic"),
+                                fill=rcol, anchor="w")
+
     def _draw_canvas_node(self, node: dict, cx: float, cy: float):
         """Draws a single rounded-rectangle node centred at (cx, cy)."""
         node_type  = node.get("Node Type", "Unknown")
@@ -771,6 +969,12 @@ class TpcHAnnotatorApp:
         """
         self.status_bar.config(text=message)
         self.root.update_idletasks()
+
+    def _redraw_chart_on_resize(self):
+        """Redraws the cost chart when the canvas is resized."""
+        if self._last_chart_data:
+            qep_cost, aqps = self._last_chart_data
+            self._draw_cost_chart(qep_cost, aqps)
 
     def _copy_output_to_clipboard(self):
         text = self.annotation_output.get("1.0", "end-1c")
