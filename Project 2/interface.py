@@ -80,6 +80,94 @@ _SQL_TOKEN_RE = re.compile(
     r"|(?P<ws>\s+)"
     r"|(?P<other>.)"
 )
+NODE_TOOLTIPS = {
+    # Scans
+    "Seq Scan":          "Sequential Scan: Reads every row in the table from disk, top to bottom.\nUsed when no useful index exists or when most rows are needed.",
+    "Index Scan":        "Index Scan: Uses a B-tree index to find matching rows directly.\nFaster than Seq Scan when only a small fraction of rows match.",
+    "Index Only Scan":   "Index Only Scan: Like Index Scan but reads data directly from the index\nwithout touching the main table. Very fast for covered queries.",
+    "Bitmap Heap Scan":  "Bitmap Heap Scan: First builds a bitmap of matching row locations,\nthen fetches those rows. Good for medium-selectivity conditions.",
+    "Bitmap Index Scan": "Bitmap Index Scan: Scans the index to build a bitmap of row locations.\nAlways paired with a Bitmap Heap Scan above it.",
+    "Tid Scan":          "TID Scan: Fetches rows by their physical tuple ID.\nRare — only used when the query references ctid directly.",
+
+    # Joins
+    "Hash Join":         "Hash Join: Builds a hash table from the smaller input, then probes\nit with each row from the larger input. Best for large unsorted tables.",
+    "Merge Join":        "Merge Join: Merges two pre-sorted inputs row by row.\nVery efficient when both sides are already sorted on the join key.",
+    "Nested Loop":       "Nested Loop: For each row in the outer input, scans the inner input.\nFast when the inner side is small or accessed via index.",
+
+    # Aggregation
+    "Aggregate":         "Aggregate: Computes aggregate functions (COUNT, SUM, AVG etc.)\nover all input rows — no grouping.",
+    "Hash Aggregate":    "Hash Aggregate: Groups rows using a hash table.\nGood for GROUP BY when the number of groups fits in memory.",
+    "Group Aggregate":   "Group Aggregate: Groups pre-sorted rows sequentially.\nRequires input to be sorted on GROUP BY keys — often follows a Sort.",
+
+    # Sorting / Limiting
+    "Sort":              "Sort: Orders rows by the specified keys.\nExpensive for large inputs — may spill to disk if memory is limited.",
+    "Limit":             "Limit: Stops execution after N rows are produced.\nEnables early termination — saves cost when combined with ORDER BY.",
+
+    # Misc
+    "Unique":            "Unique: Removes consecutive duplicate rows.\nUsed for DISTINCT or UNION — requires sorted input.",
+    "Hash":              "Hash: Builds a hash table from its input.\nAlways appears as the inner child of a Hash Join.",
+    "Materialize":       "Materialize: Caches its input rows in memory (or disk).\nPrevents re-scanning the same subplan multiple times.",
+    "Gather":            "Gather: Collects results from parallel worker processes\ninto a single stream for the main process.",
+    "Gather Merge":      "Gather Merge: Like Gather, but preserves sort order\nwhen merging results from parallel workers.",
+    "Subquery Scan":     "Subquery Scan: Wraps a subquery result so it can be\ntreated as a table by the outer query.",
+    "Result":            "Result: Returns a constant or computed value directly\nwithout scanning any table.",
+    "Append":            "Append: Concatenates results from multiple subplans.\nUsed for UNION ALL or partitioned table scans.",
+    "Memoize":           "Memoize: Caches results of parameterized inner scans\nto avoid re-execution for repeated parameter values.",
+}
+
+class _CanvasTooltip:
+    def __init__(self, canvas: tk.Canvas):
+        self._canvas = canvas
+        self._texts = {}
+        self._tip_win = None
+        self._after = None
+
+        canvas.bind("<Motion>", self._on_motion, add="+")
+        canvas.bind("<Leave>", self._hide, add="+")
+
+    def register(self, item_id: int, text: str):
+        self._texts[item_id] = text
+        self._canvas.tag_bind(item_id, "<Enter>",
+            lambda e, t=text: self._schedule(t, e.x_root, e.y_root))
+        self._canvas.tag_bind(item_id, "<Motion>",
+            lambda e, t=text: self._schedule(t, e.x_root, e.y_root))
+        self._canvas.tag_bind(item_id, "<Leave>",
+            lambda e: self._hide())
+
+    def _schedule(self, text, xr, yr):
+        if self._after:
+            self._canvas.after_cancel(self._after)
+        self._after = self._canvas.after(300, lambda: self._show(text, xr, yr))
+
+    def _on_motion(self, event):
+        # Fires on canvas background — hide if not over a registered item
+        cx = self._canvas.canvasx(event.x)
+        cy = self._canvas.canvasy(event.y)
+        items = self._canvas.find_overlapping(cx-2, cy-2, cx+2, cy+2)
+        if not any(i in self._texts for i in items):
+            self._hide()
+
+    def _show(self, text: str, rx: int, ry: int):
+        self._hide()
+        self._tip_win = tk.Toplevel(self._canvas)
+        self._tip_win.wm_overrideredirect(True)
+        self._tip_win.wm_attributes("-topmost", True)
+        border = tk.Frame(self._tip_win, bg="#3A3A5C", padx=1, pady=1)
+        border.pack()
+        tk.Label(
+            border, text=text, justify="left",
+            bg="#FFFDE7", fg="#1a1a2e", font=("Arial", 8),
+            padx=10, pady=6, wraplength=300,
+        ).pack()
+        self._tip_win.wm_geometry(f"+{rx + 14}+{ry + 10}")
+
+    def _hide(self, event=None):
+        if self._after:
+            self._canvas.after_cancel(self._after)
+            self._after = None
+        if self._tip_win:
+            self._tip_win.destroy()
+            self._tip_win = None
 # =============================================================================
 # SECTION 1: MAIN APPLICATION CLASS
 # =============================================================================
@@ -243,7 +331,7 @@ class TpcHAnnotatorApp:
             relief="flat", padx=4, pady=7,
             cursor="hand2"
         )
-        history_btn.grid(row=0, column=0, sticky="ew", padx=(0, 4))
+        history_btn.grid(row=0, column=1, sticky="ew")
 
         annotate_btn = tk.Button(
             btn_row, text="  Annotate Query",
@@ -253,7 +341,7 @@ class TpcHAnnotatorApp:
             relief="flat", padx=8, pady=7,
             cursor="hand2"
         )
-        annotate_btn.grid(row=0, column=1, sticky="ew")
+        annotate_btn.grid(row=0, column=0, sticky="ew", padx=(0, 4))
 
         return frame
 
@@ -333,6 +421,7 @@ class TpcHAnnotatorApp:
         canvas_frame = tk.Frame(tree_tab)
         canvas_frame.pack(fill="both", expand=True)
         self.qep_canvas = tk.Canvas(canvas_frame, bg="#EEF2F7", highlightthickness=0)
+        self._canvas_tooltip = _CanvasTooltip(self.qep_canvas)
         vscroll = ttk.Scrollbar(canvas_frame, orient="vertical",
                                 command=self.qep_canvas.yview)
         hscroll = ttk.Scrollbar(canvas_frame, orient="horizontal",
@@ -979,7 +1068,14 @@ class TpcHAnnotatorApp:
             fill=scheme["text"],
             width=NODE_W - 10
         )
+        # Register all shapes of this node with the tooltip
+        tip_text = NODE_TOOLTIPS.get(node_type, f"{node_type}: No description available.")
+        tip_text += f"\n\nEstimated cost : {total_cost}"
+        tip_text += f"\nEstimated rows : {plan_rows}"
 
+        for item_id in self.qep_canvas.find_overlapping(x0, y0, x1, y1):
+            self._canvas_tooltip.register(item_id, tip_text)
+            
     def _update_status(self, message: str):
         """
         Updates the bottom status bar with a new message.
