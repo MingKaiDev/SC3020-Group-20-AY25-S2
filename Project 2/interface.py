@@ -190,6 +190,9 @@ class TpcHAnnotatorApp:
         """
         self.root = root
         self.conn = None
+        self._canvas_zoom = 1.0
+        self._loading_popup = None
+        self._loading_bar = None
         self._build_top_bar()
         self._build_panels()
         self._build_status_bar()
@@ -378,6 +381,12 @@ class TpcHAnnotatorApp:
     def _build_right_panel(self, parent) -> tk.Frame:
         frame = tk.LabelFrame(parent, text="Query Execution Plan (QEP)")
 
+        zoom_bar = tk.Frame(frame)
+        zoom_bar.pack(fill="x", padx=8, pady=(6, 0))
+        tk.Label(zoom_bar, text="Zoom:").pack(side="left")
+        tk.Button(zoom_bar, text="-", width=3, command=self._zoom_qep_out).pack(side="left", padx=(6, 4))
+        tk.Button(zoom_bar, text="+", width=3, command=self._zoom_qep_in).pack(side="left")
+
         # ── Colour legend ────────────────────────────────────────────────────
         legend_bar = tk.Frame(frame, bg="#F0F0F0", relief="flat", bd=1)
         legend_bar.pack(fill="x", padx=8, pady=(6, 0))
@@ -558,6 +567,8 @@ class TpcHAnnotatorApp:
                 self._update_status("Ready.")
                 return
 
+            self._show_loading_popup()
+
             self._update_status("Fetching QEP from PostgreSQL...")
             qep = get_qep(self.conn, sql)
 
@@ -583,6 +594,8 @@ class TpcHAnnotatorApp:
         except Exception as e:
             messagebox.showerror("Annotation Failed", str(e))
             self._update_status("Ready.")
+        finally:
+            self._hide_loading_popup()
 
     def _clear_all(self):
         if hasattr(self, "query_input"):
@@ -612,6 +625,79 @@ class TpcHAnnotatorApp:
     def _on_canvas_drag_move(self, event):
         """Drag the canvas as the mouse moves."""
         self.qep_canvas.scan_dragto(event.x, event.y, gain=1)
+
+    def _zoom_qep_in(self):
+        self._zoom_qep_canvas(1.15)
+
+    def _zoom_qep_out(self):
+        self._zoom_qep_canvas(1 / 1.15)
+
+    def _zoom_qep_canvas(self, factor: float):
+        if not hasattr(self, "qep_canvas"):
+            return
+        if not self.qep_canvas.find_all():
+            return
+
+        new_zoom = self._canvas_zoom * factor
+        if new_zoom < 0.15 or new_zoom > 3.0:
+            return
+
+        self._canvas_zoom = new_zoom
+        bbox = self.qep_canvas.bbox("all")
+        if not bbox:
+            return
+        cx = (bbox[0] + bbox[2]) / 2
+        cy = (bbox[1] + bbox[3]) / 2
+        self.qep_canvas.scale("all", cx, cy, factor, factor)
+
+        new_bbox = self.qep_canvas.bbox("all")
+        if new_bbox:
+            self.qep_canvas.configure(scrollregion=new_bbox)
+        self._update_status(f"QEP zoom: {int(self._canvas_zoom * 100)}%")
+
+    def _show_loading_popup(self):
+        if self._loading_popup and self._loading_popup.winfo_exists():
+            return
+
+        popup = tk.Toplevel(self.root)
+        popup.title("Working...")
+        popup.geometry("380x180")
+        popup.resizable(False, False)
+        popup.transient(self.root)
+        popup.grab_set()
+
+        # Center over parent window.
+        self.root.update_idletasks()
+        x = self.root.winfo_rootx() + (self.root.winfo_width() - 380) // 2
+        y = self.root.winfo_rooty() + (self.root.winfo_height() - 180) // 2
+        popup.geometry(f"380x180+{x}+{y}")
+
+        container = tk.Frame(popup, padx=16, pady=14)
+        container.pack(fill="both", expand=True)
+
+        tk.Label(
+            container,
+            text="Please Wait",
+            font=("Arial", 16, "bold"),
+            fg="#1f2d3d",
+        ).pack(pady=(18, 14))
+
+        self._loading_bar = ttk.Progressbar(container, mode="indeterminate", length=240)
+        self._loading_bar.pack(pady=(0, 8))
+        self._loading_bar.start(10)
+
+        popup.protocol("WM_DELETE_WINDOW", lambda: None)
+        self._loading_popup = popup
+        popup.update_idletasks()
+
+    def _hide_loading_popup(self):
+        if self._loading_bar:
+            self._loading_bar.stop()
+        if self._loading_popup and self._loading_popup.winfo_exists():
+            self._loading_popup.grab_release()
+            self._loading_popup.destroy()
+        self._loading_popup = None
+        self._loading_bar = None
 
 
 # =============================================================================
