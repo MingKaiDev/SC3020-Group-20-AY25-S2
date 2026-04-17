@@ -453,14 +453,14 @@ class TpcHAnnotatorApp:
         """
         
         self._update_status("Connecting to database...")
-        self.conn = get_connection()
 
-        if self.conn:
+        try:
+            self.conn = get_connection()
             self.db_connected = True
             self.connect_btn.config(text="Disconnect from DB", bg="#F44336")
             self.status_lbl.config(text="Connected", fg="green")
             self._update_status("Database connected.")
-        else:
+        except:
             self.status_lbl.config(text="Not connected", fg="red")
             root = tk.Tk()
             root.withdraw()  # hide the empty root window
