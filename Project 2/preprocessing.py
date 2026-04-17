@@ -30,11 +30,6 @@ def get_connection(): #Done
 
     Returns:
         psycopg.Connection: A live database connection object.
-
-    TODO:
-        - Load DB credentials from .env using os.getenv() 
-        - Call psycopg.connect() with host, port, dbname, user, password
-        - Raise a clear error message if connection fails
     """
     try:
         host = os.getenv("DB_HOST", "localhost")
@@ -61,10 +56,6 @@ def close_connection(conn): #Done
 
     Args:
         conn (psycopg.Connection): The connection to close.
-
-    TODO:
-        - Check if conn is not None before closing
-        - Call conn.close()
     """
     if conn and not conn.closed:
         conn.close()
@@ -83,12 +74,6 @@ def validate_query(sql_query: str) -> bool:
 
     Returns:
         bool: True if valid, False otherwise.
-
-    TODO:
-        - Check that the query is not None or empty string
-        - Check it starts with a valid SQL keyword (SELECT, WITH, etc.)
-        - Optionally: check for SQL injection patterns to sanitize input
-        - Return False with a descriptive print/log message if invalid
     """
     if not sql_query or not sql_query.strip():
         logger.warning("Query validation failed: empty or None query")
@@ -146,14 +131,6 @@ def get_qep(conn, sql_query: str) -> dict:
 
     Returns:
         dict: The root node of the QEP as a parsed Python dictionary.
-
-    TODO:
-        - Open a cursor using conn.cursor()
-        - Execute: EXPLAIN (ANALYZE, FORMAT JSON) <sql_query>
-        - Fetch the result with cur.fetchone()
-        - Return result[0][0] — this is the parsed JSON plan dict
-        - Handle exceptions (e.g. invalid SQL syntax) and raise with a clear message
-
     NOTE:
         The returned dict has structure: { "Plan": { "Node Type": ..., "Plans": [...] } }
     """
@@ -192,18 +169,6 @@ def get_aqp(conn, sql_query: str, disabled_operators: list) -> dict:
 
     Returns:
         dict: The root node of the AQP as a parsed Python dictionary.
-
-    TODO:
-        - Open a cursor
-        - For each operator in disabled_operators, run: SET <operator> = off
-        - Run EXPLAIN (ANALYZE, FORMAT JSON) <sql_query> and fetch result
-        - Re-enable all operators afterwards: SET <operator> = on
-        - Return the plan dict (same structure as get_qep)
-        - Wrap in try/except — some AQPs may be impossible (e.g. no index exists)
-
-    REFERENCE:
-        PostgreSQL planner settings:
-        https://www.postgresql.org/docs/9.2/runtime-config-query.html
     """
     if not validate_query(sql_query):
         raise ValueError("Invalid SQL query.")
@@ -249,19 +214,6 @@ def get_all_aqps(conn, sql_query: str) -> dict:
     Returns:
         dict: A mapping of plan label → AQP plan dict.
               e.g. { "no_hashjoin": {...}, "no_seqscan": {...}, ... }
-
-    TODO:
-        - Define a dict of operator groups to disable, for example:
-            {
-                "no_hashjoin":  ["enable_hashjoin"],
-                "no_mergejoin": ["enable_mergejoin"],
-                "no_nestloop":  ["enable_nestloop"],
-                "no_seqscan":   ["enable_seqscan"],
-                "no_indexscan": ["enable_indexscan"],
-            }
-        - Loop through each group and call get_aqp()
-        - Store results in a dict with the label as key
-        - If get_aqp() raises an exception, store None for that label
     """
     operator_groups = {
         "no_hashjoin":  ["enable_hashjoin"],
@@ -294,13 +246,6 @@ def parse_plan_nodes(plan: dict, nodes=None) -> list:
 
     Returns:
         list: A flat list of all node dicts in the plan tree.
-
-    TODO:
-        - Handle both "Plan" wrapper (from root) and raw node dicts (from recursion)
-        - Append current node to nodes list
-        - Recurse into node.get("Plans", []) for child nodes
-        - Return the completed nodes list
-
     EXAMPLE OUTPUT:
         [
           { "Node Type": "Hash Join", "Total Cost": 4523.0, ... },
@@ -327,9 +272,6 @@ def get_node_cost(node: dict) -> float:
 
     Returns:
         float: The "Total Cost" value, or infinity if not found.
-
-    TODO:
-        - Return node.get("Total Cost", float("inf"))
     """
     return node.get("Total Cost", float("inf"))
 
@@ -344,10 +286,6 @@ def get_root_cost(plan: dict) -> float:
 
     Returns:
         float: The total cost at the root node.
-
-    TODO:
-        - Access the root node via plan.get("Plan", plan)
-        - Call get_node_cost() on it and return the result
     """
     root = plan.get("Plan", plan)
     return get_node_cost(root)
