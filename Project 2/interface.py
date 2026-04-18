@@ -405,20 +405,9 @@ class TpcHAnnotatorApp:
         return frame
 
     def _build_status_bar(self):
-        self.status_bar = tk.Label(
-            self.root,
-            text="Ready.",
-            relief="sunken",
-            anchor="w",
-            padx=5
-        )
-        self.status_bar.pack(side="bottom", fill="x")
-
-    def _build_status_bar(self):
         """
         Builds a slim status bar at the very bottom of the window.
         Shows real-time status messages (e.g. "Fetching QEP...", "Done.").
-
         """
         self.status_bar = tk.Label(
             self.root,
