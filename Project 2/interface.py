@@ -191,6 +191,7 @@ class TpcHAnnotatorApp:
         self.root = root
         self.conn = None
         self._canvas_zoom = 1.0
+        self._current_qep_plan = None
         self._loading_popup = None
         self._loading_bar = None
         self._build_top_bar()
@@ -609,6 +610,8 @@ class TpcHAnnotatorApp:
         if hasattr(self, "qep_canvas"):
             self.qep_canvas.delete("all")
             self.qep_canvas.configure(scrollregion=(0, 0, 0, 0))
+            self._canvas_zoom = 1.0
+            self._current_qep_plan = None
 
         self._update_status("Ready.")
 
@@ -635,7 +638,7 @@ class TpcHAnnotatorApp:
     def _zoom_qep_canvas(self, factor: float):
         if not hasattr(self, "qep_canvas"):
             return
-        if not self.qep_canvas.find_all():
+        if self._current_qep_plan is None:
             return
 
         new_zoom = self._canvas_zoom * factor
@@ -643,16 +646,8 @@ class TpcHAnnotatorApp:
             return
 
         self._canvas_zoom = new_zoom
-        bbox = self.qep_canvas.bbox("all")
-        if not bbox:
-            return
-        cx = (bbox[0] + bbox[2]) / 2
-        cy = (bbox[1] + bbox[3]) / 2
-        self.qep_canvas.scale("all", cx, cy, factor, factor)
-
-        new_bbox = self.qep_canvas.bbox("all")
-        if new_bbox:
-            self.qep_canvas.configure(scrollregion=new_bbox)
+        # Redraw entire tree at new zoom level
+        self._populate_qep_tree(self._current_qep_plan)
         self._update_status(f"QEP zoom: {int(self._canvas_zoom * 100)}%")
 
     def _show_loading_popup(self):
@@ -930,10 +925,11 @@ class TpcHAnnotatorApp:
         if not hasattr(self, "qep_canvas"):
             return
 
+        self._current_qep_plan = plan  # Cache for zoom redraws
         self.qep_canvas.delete("all")
         root_node = plan.get("Plan", plan)
 
-        nodes_pos, edges = self._layout_tree(root_node)
+        nodes_pos, edges = self._layout_tree(root_node, self._canvas_zoom)
 
         # Draw edges first so nodes appear on top
         for (x1, y1, x2, y2) in edges:
@@ -943,7 +939,7 @@ class TpcHAnnotatorApp:
             )
 
         for (node, cx, cy) in nodes_pos:
-            self._draw_canvas_node(node, cx, cy)
+            self._draw_canvas_node(node, cx, cy, self._canvas_zoom)
 
         # Fit scroll region to content
         self.qep_canvas.update_idletasks()
@@ -957,43 +953,50 @@ class TpcHAnnotatorApp:
                 )
             )
 
-    def _subtree_width(self, node: dict) -> float:
+    def _subtree_width(self, node: dict, zoom: float) -> float:
         """Returns the pixel width required to lay out this node's full subtree."""
         children = node.get("Plans", [])
+        node_w = NODE_W * zoom
         if not children:
-            return NODE_W
-        total = sum(self._subtree_width(c) for c in children)
-        total += H_GAP * (len(children) - 1)
-        return max(NODE_W, total)
+            return node_w
+        total = sum(self._subtree_width(c, zoom) for c in children)
+        total += H_GAP * zoom * (len(children) - 1)
+        return max(node_w, total)
 
-    def _layout_tree(self, root_node: dict):
+    def _layout_tree(self, root_node: dict, zoom: float):
         """
-        Two-pass top-down layout.
+        Two-pass top-down layout with zoom factor.
         Returns:
             nodes_pos : list of (node_dict, cx, cy)
             edges     : list of (x1, y1, x2, y2)
         """
         nodes_pos = []
         edges     = []
+        
+        node_h = NODE_H * zoom
+        h_gap = H_GAP * zoom
+        v_gap = V_GAP * zoom
+        margin_x = MARGIN_X * zoom
+        margin_y = MARGIN_Y * zoom
 
         def recurse(node, left_x, top_y):
-            sw = self._subtree_width(node)
+            sw = self._subtree_width(node, zoom)
             cx = left_x + sw / 2
-            cy = top_y + NODE_H / 2
+            cy = top_y + node_h / 2
             nodes_pos.append((node, cx, cy))
 
             children  = node.get("Plans", [])
             child_left = left_x
             for child in children:
-                cw       = self._subtree_width(child)
+                cw       = self._subtree_width(child, zoom)
                 child_cx = child_left + cw / 2
-                child_cy = top_y + NODE_H + V_GAP + NODE_H / 2
+                child_cy = top_y + node_h + v_gap + node_h / 2
                 # parent bottom-centre -> child top-centre
-                edges.append((cx, cy + NODE_H / 2, child_cx, child_cy - NODE_H / 2))
-                recurse(child, child_left, top_y + NODE_H + V_GAP)
-                child_left += cw + H_GAP
+                edges.append((cx, cy + node_h / 2, child_cx, child_cy - node_h / 2))
+                recurse(child, child_left, top_y + node_h + v_gap)
+                child_left += cw + h_gap
 
-        recurse(root_node, MARGIN_X, MARGIN_Y)
+        recurse(root_node, margin_x, margin_y)
         return nodes_pos, edges
 
     def _draw_cost_chart(self, qep_cost: float, aqps: dict):
@@ -1079,8 +1082,8 @@ class TpcHAnnotatorApp:
                                 text=rtxt, font=("Arial", 7, "italic"),
                                 fill=rcol, anchor="w")
 
-    def _draw_canvas_node(self, node: dict, cx: float, cy: float):
-        """Draws a single rounded-rectangle node centred at (cx, cy)."""
+    def _draw_canvas_node(self, node: dict, cx: float, cy: float, zoom: float):
+        """Draws a single rounded-rectangle node centred at (cx, cy) with zoom applied."""
         node_type  = node.get("Node Type", "Unknown")
         total_cost = node.get("Total Cost", "N/A")
         plan_rows  = node.get("Plan Rows",  "N/A")
@@ -1092,11 +1095,13 @@ class TpcHAnnotatorApp:
         else:
             scheme = NODE_COLORS["other"]
 
-        x0 = cx - NODE_W / 2
-        y0 = cy - NODE_H / 2
-        x1 = cx + NODE_W / 2
-        y1 = cy + NODE_H / 2
-        r  = 8  # corner radius
+        node_w = NODE_W * zoom
+        node_h = NODE_H * zoom
+        x0 = cx - node_w / 2
+        y0 = cy - node_h / 2
+        x1 = cx + node_w / 2
+        y1 = cy + node_h / 2
+        r  = max(4, int(8 * zoom))  # corner radius scales with zoom
 
         # Rounded rectangle via smooth polygon
         self.qep_canvas.create_polygon(
@@ -1114,22 +1119,24 @@ class TpcHAnnotatorApp:
             smooth=True
         )
 
-        # Node type (bold, upper line)
+        # Node type (bold, upper line) - scale font with zoom
+        title_font_size = max(1, int(9 * zoom))
         self.qep_canvas.create_text(
-            cx, cy - 9,
+            cx, cy - 9 * zoom,
             text=node_type,
-            font=("Arial", 9, "bold"),
+            font=("Arial", title_font_size, "bold"),
             fill=scheme["text"],
-            width=NODE_W - 10
+            width=max(60, node_w - 10)
         )
 
-        # Cost + rows (smaller, lower line)
+        # Cost + rows (smaller, lower line) - scale font with zoom
+        detail_font_size = max(1, int(7 * zoom))
         self.qep_canvas.create_text(
-            cx, cy + 10,
+            cx, cy + 10 * zoom,
             text=f"cost: {total_cost}  rows: {plan_rows}",
-            font=("Arial", 7),
+            font=("Arial", detail_font_size),
             fill=scheme["text"],
-            width=NODE_W - 10
+            width=max(60, node_w - 10)
         )
         # Register all shapes of this node with the tooltip
         tip_text = NODE_TOOLTIPS.get(node_type, f"{node_type}: No description available.")
