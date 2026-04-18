@@ -91,6 +91,10 @@ NODE_TOOLTIPS = {
     "Memoize":           "Memoize: Caches results of parameterized inner scans\nto avoid re-execution for repeated parameter values.",
 }
 
+# =============================================================================
+# SECTION 1: CANVAS CLASS
+# =============================================================================
+
 class _CanvasTooltip:
     def __init__(self, canvas: tk.Canvas):
         self._canvas = canvas
@@ -145,7 +149,7 @@ class _CanvasTooltip:
             self._tip_win.destroy()
             self._tip_win = None
 # =============================================================================
-# SECTION 1: MAIN APPLICATION CLASS
+# SECTION 2: MAIN APPLICATION CLASS
 # =============================================================================
 
 class TpcHAnnotatorApp:
@@ -177,7 +181,7 @@ class TpcHAnnotatorApp:
 
 
 # =============================================================================
-# SECTION 2: UI BUILDER METHODS
+# SECTION 3: UI BUILDER METHODS
 # =============================================================================
 
     def _build_top_bar(self):
@@ -215,14 +219,7 @@ class TpcHAnnotatorApp:
         clear_btn.pack(side="right")
 
     def _build_panels(self):
-        """
-        Builds the main 3-panel layout using a PanedWindow (resizable panels).
-
-        Panels:
-            Left   → SQL query input + Annotate button  (_build_left_panel)
-            Middle → Annotated output display           (_build_middle_panel)
-            Right  → QEP tree visualisation             (_build_right_panel)
-        """
+        """Create the top control bar with database and reset actions."""
         paned = tk.PanedWindow(self.root, orient="horizontal", sashrelief="raised")
         paned.pack(fill="both", expand=True, padx=10, pady=(0,10))
 
@@ -235,22 +232,7 @@ class TpcHAnnotatorApp:
         paned.add(right_panel, width=350)
 
     def _build_left_panel(self, parent) -> tk.Frame:
-        """
-        Builds the LEFT panel: SQL query input area.
-
-        Contains:
-            - Label: "SQL Query Input"
-            - ScrolledText box for typing/pasting SQL
-            - "Annotate Query" button → calls _run_annotation()
-            - Optional: dropdown to select dataset (TPC-H / IMDB) #note not implemented
-
-        Args:
-            parent: The PanedWindow to attach this panel to.
-
-        Returns:
-            tk.LabelFrame: The completed left panel frame.
-
-        """
+        """Builds the LEFT panel: SQL query input area."""
         frame = tk.LabelFrame(parent, text="SQL Query Input")
 
         lbl = tk.Label(frame, text="Enter SQL query:")
@@ -402,7 +384,7 @@ class TpcHAnnotatorApp:
 
 
 # =============================================================================
-# SECTION 3: EVENT HANDLERS
+# SECTION 4: DATABASE AND ANNOTATION
 # =============================================================================
 
     def _toggle_db_connection(self):
@@ -491,6 +473,10 @@ class TpcHAnnotatorApp:
             self._update_status("Ready.")
         finally:
             self._hide_loading_popup()
+
+# =============================================================================
+# SECTION 5: GENERAL UI STATE HELPERS
+# =============================================================================
 
     def _clear_all(self):
         if hasattr(self, "query_input"):
@@ -590,7 +576,7 @@ class TpcHAnnotatorApp:
 
 
 # =============================================================================
-# SECTION 4: DISPLAY HELPERS
+# SECTION 6: ANNOTATED OUTPUT RENDERING
 # =============================================================================
 
     def _insert_highlighted_sql(self, widget, line: str):
@@ -700,9 +686,9 @@ class TpcHAnnotatorApp:
 
         out.config(state="disabled")
 
-    # ------------------------------------------------------------------
-    # QEP Visual Tree (Canvas-based)
-    # ------------------------------------------------------------------
+# =============================================================================
+# SECTION 7: QEP TREE VISUALISATION
+# =============================================================================
 
     def _populate_qep_tree(self, plan: dict):
         """Entry point: clears canvas, computes layout, draws edges then nodes."""
@@ -782,6 +768,10 @@ class TpcHAnnotatorApp:
 
         recurse(root_node, margin_x, margin_y)
         return nodes_pos, edges
+
+# =============================================================================
+# SECTION 8: COST CHART VISUALISATION
+# =============================================================================
 
     def _draw_cost_chart(self, qep_cost: float, aqps: dict):
         """Draws a horizontal bar chart of QEP vs AQP costs on self.cost_canvas."""
@@ -935,11 +925,6 @@ class TpcHAnnotatorApp:
 
         Args:
             message (str): Status message to display.
-
-        TODO:
-            - self.status_bar.config(text=message)
-            - Call self.root.update_idletasks() to force immediate UI refresh
-              (important so status updates show during long operations)
         """
         self.status_bar.config(text=message)
         self.root.update_idletasks()
@@ -955,6 +940,10 @@ class TpcHAnnotatorApp:
         self.root.clipboard_clear()
         self.root.clipboard_append(text)
         self._update_status("Annotated output copied to clipboard.")
+
+# =============================================================================
+# SECTION 10: HISTORY WINDOW
+# =============================================================================
 
     def _open_history_window(self):
         """Opens a popup window showing all past annotation runs."""
