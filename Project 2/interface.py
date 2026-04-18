@@ -299,7 +299,6 @@ class TpcHAnnotatorApp:
         tk.Button(zoom_bar, text="-", width=3, command=self._zoom_qep_out).pack(side="left", padx=(6, 4))
         tk.Button(zoom_bar, text="+", width=3, command=self._zoom_qep_in).pack(side="left")
 
-        # ── Colour legend ────────────────────────────────────────────────────
         legend_bar = tk.Frame(frame, bg="#F0F0F0", relief="flat", bd=1)
         legend_bar.pack(fill="x", padx=8, pady=(6, 0))
         for label, color in [("Scan", "#28A745"), ("Join", "#FFC107"), ("Other", "#5B9BD5")]:
@@ -308,11 +307,9 @@ class TpcHAnnotatorApp:
             tk.Label(legend_bar, text=label, bg="#F0F0F0",
                     font=("Arial", 8)).pack(side="left", padx=(0, 8))
 
-        # ── Notebook with 2 tabs ─────────────────────────────────────────────
         notebook = ttk.Notebook(frame)
         notebook.pack(fill="both", expand=True, padx=8, pady=(4, 8))
 
-        # ── Tab 1: QEP Tree (your existing canvas code) ──────────────────────
         tree_tab = tk.Frame(notebook)
         notebook.add(tree_tab, text="  QEP Tree  ")
 
@@ -330,23 +327,17 @@ class TpcHAnnotatorApp:
         vscroll.pack(side="right",  fill="y")
         self.qep_canvas.pack(side="left", fill="both", expand=True)
         self.qep_canvas.config(cursor="fleur")
-        self.qep_canvas.bind("<MouseWheel>",       self._on_canvas_mousewheel)
-        self.qep_canvas.bind("<Shift-MouseWheel>", self._on_canvas_shift_mousewheel)
-        self.qep_canvas.bind("<ButtonPress-1>",    self._on_canvas_drag_start)
-        self.qep_canvas.bind("<B1-Motion>",        self._on_canvas_drag_move)
+        self.qep_canvas.bind("<MouseWheel>",self._on_canvas_mousewheel)
+        self.qep_canvas.bind("<Shift-MouseWheel>",self._on_canvas_shift_mousewheel)
+        self.qep_canvas.bind("<ButtonPress-1>",self._on_canvas_drag_start)
+        self.qep_canvas.bind("<B1-Motion>",self._on_canvas_drag_move)
 
-        # ── Tab 2: AQP Cost Chart ────────────────────────────────────────────
         chart_tab = tk.Frame(notebook, bg="white")
         notebook.add(chart_tab, text="  Cost Chart  ")
 
         self.cost_canvas = tk.Canvas(chart_tab, bg="white", highlightthickness=0)
         self.cost_canvas.pack(fill="both", expand=True, padx=4, pady=4)
-        # Redraw on resize so bars scale to available width
-        self.cost_canvas.bind(
-            "<Configure>",
-            lambda e: self._redraw_chart_on_resize()
-        )
-        # Store latest chart data so resize can redraw
+        self.cost_canvas.bind("<Configure>",lambda e: self._redraw_chart_on_resize())
         self._last_chart_data = None
 
         return frame
@@ -503,7 +494,6 @@ class TpcHAnnotatorApp:
             return
 
         self._canvas_zoom = new_zoom
-        # Redraw entire tree at new zoom level
         self._populate_qep_tree(self._current_qep_plan)
         self._update_status(f"QEP zoom: {int(self._canvas_zoom * 100)}%")
 
@@ -629,7 +619,7 @@ class TpcHAnnotatorApp:
         out.insert("end", f"  {title}  \n", "section_header")
         out.insert("end", "\n")
         for item in items:
-            out.insert("end", f"• {item}\n", tag)
+            out.insert("end", f" {item}\n", tag)
 
     def _display_annotations(self, sql: str, annotation_result: dict):
         """Render annotated SQL and grouped operator notes in the output panel."""
@@ -653,9 +643,9 @@ class TpcHAnnotatorApp:
         else:
             out.insert("end", sql + "\n", "sql")
 
-        self._insert_section(out, "Scan Operations",  annotation_result.get("scans",  []), "scan")
-        self._insert_section(out, "Join Operations",  annotation_result.get("joins",  []), "join")
-        self._insert_section(out, "Other Operations", annotation_result.get("others", []), "other")
+        self._insert_section(out,"Scan Operations",annotation_result.get("scans",[]),"scan")
+        self._insert_section(out,"Join Operations",annotation_result.get("joins",[]),"join")
+        self._insert_section(out,"Other Operations",annotation_result.get("others",[]),"other")
 
         out.config(state="disabled")
 
@@ -668,13 +658,12 @@ class TpcHAnnotatorApp:
         if not hasattr(self, "qep_canvas"):
             return
 
-        self._current_qep_plan = plan  # Cache for zoom redraws
+        self._current_qep_plan = plan  
         self.qep_canvas.delete("all")
         root_node = plan.get("Plan", plan)
 
         nodes_pos, edges = self._layout_tree(root_node, self._canvas_zoom)
 
-        # Draw edges first so nodes appear on top
         for (x1, y1, x2, y2) in edges:
             self.qep_canvas.create_line(
                 x1, y1, x2, y2,
@@ -684,7 +673,6 @@ class TpcHAnnotatorApp:
         for (node, cx, cy) in nodes_pos:
             self._draw_canvas_node(node, cx, cy, self._canvas_zoom)
 
-        # Fit scroll region to content
         self.qep_canvas.update_idletasks()
         bbox = self.qep_canvas.bbox("all")
         if bbox:
@@ -707,12 +695,7 @@ class TpcHAnnotatorApp:
         return max(node_w, total)
 
     def _layout_tree(self, root_node: dict, zoom: float):
-        """
-        Two-pass top-down layout with zoom factor.
-        Returns:
-            nodes_pos : list of (node_dict, cx, cy)
-            edges     : list of (x1, y1, x2, y2)
-        """
+        """Two-pass top-down layout with zoom factor."""
         nodes_pos = []
         edges     = []
         
@@ -919,9 +902,8 @@ class TpcHAnnotatorApp:
         win.title("Annotation History")
         win.geometry("700x500")
         win.minsize(500, 350)
-        win.grab_set()   # modal — blocks interaction with main window until closed
+        win.grab_set()
 
-        # ── Top label ────────────────────────────────────────────────────────
         header = tk.Frame(win, bg="#3A3A5C", pady=6)
         header.pack(fill="x")
         tk.Label(header, text=f"Annotation History  ({len(self._history)} runs)",
@@ -934,7 +916,6 @@ class TpcHAnnotatorApp:
                         expand=True)
             return
 
-        # ── Left: scrollable list of runs ────────────────────────────────────
         pane = tk.PanedWindow(win, orient="horizontal", sashwidth=4,
                             sashrelief="flat", bg="#CCCCCC")
         pane.pack(fill="both", expand=True, padx=0, pady=0)
@@ -960,7 +941,6 @@ class TpcHAnnotatorApp:
                 lambda e: list_canvas.configure(
                     scrollregion=list_canvas.bbox("all")))
 
-        # ── Right: detail panel ───────────────────────────────────────────────
         detail_frame = tk.Frame(pane, bg="white")
         pane.add(detail_frame)
 
@@ -971,7 +951,6 @@ class TpcHAnnotatorApp:
         )
         detail_text.pack(fill="both", expand=True)
 
-        # Tags for detail panel
         detail_text.tag_config("ts",
             foreground="#888888", font=("Arial", 8, "italic"))
         detail_text.tag_config("sql_block",
@@ -988,13 +967,12 @@ class TpcHAnnotatorApp:
         detail_text.tag_config("other", foreground="#4a4aaa",
             font=("Arial", 9), lmargin1=12, lmargin2=20, spacing3=3)
 
-        selected_btn = [None]   # mutable ref for currently highlighted button
+        selected_btn = [None]
 
         def show_entry(idx):
             """Populate the right panel with history entry [idx]."""
             entry = self._history[idx]
 
-            # Highlight selected run button
             if selected_btn[0]:
                 selected_btn[0].config(bg="#F5F5F5", fg="#222222")
             selected_btn[0] = run_buttons[idx]
@@ -1003,40 +981,27 @@ class TpcHAnnotatorApp:
             detail_text.config(state="normal")
             detail_text.delete("1.0", "end")
 
-            # Timestamp
-            detail_text.insert("end",
-                f"Run {idx + 1}  —  {entry['timestamp']}\n", "ts")
+            detail_text.insert("end", f"Run {idx + 1}  —  {entry['timestamp']}\n", "ts")
             detail_text.insert("end", "\n")
 
-            # SQL block
             detail_text.insert("end", "  SQL Query  \n", "sec")
             detail_text.insert("end", "\n")
             detail_text.insert("end",
                 entry["sql"].strip() + "\n", "sql_block")
 
-            # Scans
-            if entry["scans"]:
-                detail_text.insert("end", "\n")
-                detail_text.insert("end", "  Scan Operations  \n", "sec")
-                detail_text.insert("end", "\n")
-                for s in entry["scans"]:
-                    detail_text.insert("end", f"• {s}\n", "scan")
+            sections = [
+                ("scans",  "Scan Operations",  "scan"),
+                ("joins",  "Join Operations",  "join"),
+                ("others", "Other Operations", "other"),
+            ]
 
-            # Joins
-            if entry["joins"]:
-                detail_text.insert("end", "\n")
-                detail_text.insert("end", "  Join Operations  \n", "sec")
-                detail_text.insert("end", "\n")
-                for j in entry["joins"]:
-                    detail_text.insert("end", f"• {j}\n", "join")
-
-            # Others
-            if entry["others"]:
-                detail_text.insert("end", "\n")
-                detail_text.insert("end", "  Other Operations  \n", "sec")
-                detail_text.insert("end", "\n")
-                for o in entry["others"]:
-                    detail_text.insert("end", f"• {o}\n", "other")
+            for key, title, tag in sections:
+                if entry[key]:
+                    detail_text.insert("end", "\n")
+                    detail_text.insert("end", f"  {title}  \n", "sec")
+                    detail_text.insert("end", "\n")
+                    for item in entry[key]:
+                        detail_text.insert("end", f" {item}\n", tag)
 
             detail_text.config(state="disabled")
 
@@ -1048,7 +1013,6 @@ class TpcHAnnotatorApp:
             win.destroy()
             self._update_status(f"Restored query from history run {idx + 1}.")
 
-        # ── Build run buttons in list panel ──────────────────────────────────
         run_buttons = []
         for i, entry in enumerate(reversed(self._history)):
             real_idx = len(self._history) - 1 - i   # newest first
@@ -1059,33 +1023,19 @@ class TpcHAnnotatorApp:
             btn_frame = tk.Frame(inner, bg="#F5F5F5")
             btn_frame.pack(fill="x", padx=4, pady=2)
 
-            run_btn = tk.Button(
-                btn_frame,
-                text=f"#{real_idx + 1}  {sql_preview}",
-                anchor="w",
-                wraplength=180,
-                justify="left",
-                bg="#F5F5F5", fg="#222222",
-                font=("Arial", 8),
-                relief="flat", pady=4, padx=6,
-                cursor="hand2",
-                command=lambda idx=real_idx: show_entry(idx)
+            run_btn = tk.Button(btn_frame,text=f"#{real_idx + 1}  {sql_preview}",anchor="w",wraplength=180,
+                justify="left",bg="#F5F5F5", fg="#222222",font=("Arial", 8),relief="flat", pady=4, padx=6,
+                cursor="hand2",command=lambda idx=real_idx: show_entry(idx)
             )
             run_btn.pack(side="left", fill="x", expand=True)
 
             # Small "restore" button
-            restore_btn = tk.Button(
-                btn_frame, text="<<",
-                bg="#F5F5F5", fg="#2E86DE",
-                font=("Arial", 7), relief="flat",
-                cursor="hand2", padx=2,
-                command=lambda idx=real_idx: restore_entry(idx)
-            )
+            restore_btn = tk.Button(btn_frame, text="<<",bg="#F5F5F5", fg="#2E86DE",
+                font=("Arial", 7), relief="flat",cursor="hand2", padx=2,command=lambda idx=real_idx: restore_entry(idx))
             restore_btn.pack(side="right")
 
-            run_buttons.insert(0, run_btn)   # keep index aligned
+            run_buttons.insert(0, run_btn)   
 
-        # ── Footer: clear history button ─────────────────────────────────────
         footer = tk.Frame(win, bg="#F0F0F0", pady=4)
         footer.pack(fill="x", side="bottom")
         tk.Button(
@@ -1103,6 +1053,5 @@ class TpcHAnnotatorApp:
             padx=8, pady=4, cursor="hand2"
         ).pack(side="right", padx=(0, 4))
 
-        # Auto-select the most recent entry
         if self._history:
             show_entry(len(self._history) - 1)
