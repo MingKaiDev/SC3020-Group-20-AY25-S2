@@ -13,19 +13,16 @@ import re
 import datetime
 
 from tkinter import ttk, scrolledtext, messagebox, font
-from preprocessing import get_connection, get_qep, get_all_aqps, validate_query, get_root_cost
+from preprocessing import get_connection, close_connection, get_qep, get_all_aqps, validate_query, get_root_cost
 from annotation import generate_annotations_with_sql
 
 # =============================================================================
 # SECTION 0: VISUAL TREE CONSTANTS
 # =============================================================================
 
-NODE_W   = 160   # width of each node rectangle
-NODE_H   = 50    # height of each node rectangle
-H_GAP    = 40    # horizontal gap between sibling subtrees
-V_GAP    = 80    # vertical gap between tree levels
-MARGIN_X = 20    # left/top canvas margin
-MARGIN_Y = 20
+NODE_W,NODE_H = 160,50 # width and height of each node rectangle
+H_GAP, V_GAP = 40,80 # horizontal and vertical gap between sibling subtrees
+MARGIN_X, MARGIN_Y = 20,20 # left/top canvas margin
 
 NODE_COLORS = {
     "scan":  {"fill": "#D4EDDA", "outline": "#28A745", "text": "#155724"},
@@ -189,6 +186,7 @@ class TpcHAnnotatorApp:
             root (tk.Tk): The root Tkinter window passed from project.py.
         """
         self.root = root
+        self.db_connected = False
         self.conn = None
         self._canvas_zoom = 1.0
         self._current_qep_plan = None
@@ -207,34 +205,34 @@ class TpcHAnnotatorApp:
     def _build_top_bar(self):
         """
         Builds the top control bar containing:
-            - "Connect to DB" button       → calls _connect_db()
-            - Connection status label      → shows "Connected ✓" or "Not connected"
-            - "Clear All" button           → calls _clear_all()
-            - Optional: DB name label      → shows which DB is connected
+            - "Connect to DB" / "Disconnect from DB" button (toggles)
+            - Connection status label → shows "Connected" or "Not connected"
+            - "Clear All" button
+            - Optional: DB name label
         """
         top_bar = tk.Frame(self.root)
         top_bar.pack(fill="x", padx=10, pady=5)
 
-        connect_btn = tk.Button(
+        self.connect_btn = tk.Button(
             top_bar,
             text="Connect to DB",
-            command= self._connect_db,
+            command=self._toggle_db_connection,
             bg="#4CAF50",
             fg="white"
         )
-        connect_btn.pack(side="left")
+        self.connect_btn.pack(side="left")
 
         self.status_lbl = tk.Label(
             top_bar,
-            text= "Not conected", #success state handled in _connect_db()
+            text="Not connected",
             fg="red"
         )
         self.status_lbl.pack(side="left", padx=10)
 
-        clear_btn= tk.Button(
+        clear_btn = tk.Button(
             top_bar,
-            text= "Clear All",
-            command= self._clear_all,
+            text="Clear All",
+            command=self._clear_all,
             bg="#E0E0E0"
         )
         clear_btn.pack(side="right")
@@ -247,13 +245,6 @@ class TpcHAnnotatorApp:
             Left   → SQL query input + Annotate button  (_build_left_panel)
             Middle → Annotated output display           (_build_middle_panel)
             Right  → QEP tree visualisation             (_build_right_panel)
-
-        TODO:
-            - Create a tk.PanedWindow with orient="horizontal"
-            - Pack it to fill remaining space (fill="both", expand=True)
-            - Call _build_left_panel(), _build_middle_panel(), _build_right_panel()
-            - Add each returned frame to the PanedWindow with .add()
-            - Set sensible default widths (e.g. 350, 450, 350)
         """
         paned = tk.PanedWindow(self.root, orient="horizontal", sashrelief="raised")
         paned.pack(fill="both", expand=True, padx=10, pady=(0,10))
@@ -281,14 +272,6 @@ class TpcHAnnotatorApp:
 
         Returns:
             tk.LabelFrame: The completed left panel frame.
-
-        TODO:
-            - Create a tk.LabelFrame with text="SQL Query Input"
-            - Add self.query_input = scrolledtext.ScrolledText(...)
-            - Add "▶ Annotate Query" button (blue background, bold font)
-              that calls _run_annotation()
-            - Optionally add a ttk.Combobox for dataset selection
-              (values=["TPC-H", "IMDB"]) #not implemented
 
         """
         frame = tk.LabelFrame(parent, text="SQL Query Input")
@@ -345,20 +328,6 @@ class TpcHAnnotatorApp:
 
         Returns:
             tk.LabelFrame: The completed middle panel frame.
-
-        TODO:
-            - Create a tk.LabelFrame with text="Annotated Output"
-            - Add self.annotation_output = scrolledtext.ScrolledText(...)
-            - Set state="disabled" so user cannot type in it
-              (enable briefly when inserting text, then disable again)
-            - Configure text tags for color coding:
-                self.annotation_output.tag_config("sql",   foreground="navy")
-                self.annotation_output.tag_config("scan",  foreground="green")
-                self.annotation_output.tag_config("join",  foreground="darkorange")
-                self.annotation_output.tag_config("other", foreground="grey")
-                self.annotation_output.tag_config("header",foreground="black",
-                                                  font=("Arial", 10, "bold"))
-            - Optionally add a "Copy to Clipboard" button
         """
         frame = tk.LabelFrame(parent, text="Annotated Output")
         self.annotation_output = scrolledtext.ScrolledText(frame, wrap="word", state="disabled", height=18)
@@ -455,11 +424,6 @@ class TpcHAnnotatorApp:
         Builds a slim status bar at the very bottom of the window.
         Shows real-time status messages (e.g. "Fetching QEP...", "Done.").
 
-        TODO:
-            - Create a tk.Label anchored to the bottom (side="bottom", fill="x")
-            - Set relief="sunken", anchor="w", padx=5
-            - Store as self.status_bar
-            - Default text: "Ready."
         """
         self.status_bar = tk.Label(
             self.root,
@@ -475,28 +439,30 @@ class TpcHAnnotatorApp:
 # SECTION 3: EVENT HANDLERS
 # =============================================================================
 
+    def _toggle_db_connection(self):
+        """Toggles between connecting and disconnecting from the DB."""
+        if self.db_connected:
+            self._disconnect_db()
+        else:
+            self._connect_db()
+
     def _connect_db(self):
         """
         Handles the "Connect to DB" button click.
         Establishes a database connection and updates the status label.
 
-        TODO:
-            - Call get_connection() from preprocessing.py
-            - Store result in self.conn
-            - On success: update self.status_lbl text to "● Connected ✓", fg="green"
-            - On failure: show messagebox.showerror() with the exception message
-                          keep self.status_lbl as "● Not connected", fg="red"
         """
         
-        #note editted mk's original method
         self._update_status("Connecting to database...")
-        self.conn = get_connection()
 
-        if self.conn:
-            self.status_lbl.config(text="● Connected ✓", fg="green")
+        try:
+            self.conn = get_connection()
+            self.db_connected = True
+            self.connect_btn.config(text="Disconnect from DB", bg="#F44336")
+            self.status_lbl.config(text="Connected", fg="green")
             self._update_status("Database connected.")
-        else:
-            self.status_lbl.config(text="● Not connected", fg="red")
+        except:
+            self.status_lbl.config(text="Not connected", fg="red")
             root = tk.Tk()
             root.withdraw()  # hide the empty root window
             response = messagebox.askokcancel(
@@ -507,52 +473,21 @@ class TpcHAnnotatorApp:
             root.destroy()
             self._update_status("Ready.")
 
-        #zl method
-        # try:
-        #     self._update_status("Connecting to database...")
-        #     self.conn = get_connection()
-        #     self.status_lbl.config(text = "● Connected ✓", fg = "green")
-        #     self._update_status("Database connected.")
-        # except Exception as e:
-        #     self.conn = None
-        #     self.status_lbl.config(text="● Not connected", fg = "red")
-        #     messagebox.showerror("Database Connection Failed", str(e))
-        #     self._update_status("Ready.")
+    def _disconnect_db(self):
+        """Handles DB disconnection logic."""
+        # --- close the connection ---
+        # e.g. self.conn.close()
+        close_connection(self.conn)
+        # Update state and UI:
+        self.db_connected = False
+        self.connect_btn.config(text="Connect to DB", bg="#4CAF50")
+        self.status_lbl.config(text="Not connected", fg="red")
 
-        # Dev mode
-        # self.conn = "DEV_MODE"
-        # self.status_lbl.config(text="Connected (dev)", fg="green")
-        # self._update_status("Dev mode: DB skipped.")
-
-    def _run_annotation(self): #note done. Implemented the actual follow without dummy data
+    def _run_annotation(self): 
         """
         Handles the "▶ Annotate Query" button click.
         Orchestrates the full pipeline: validate → QEP → AQPs → annotate → display.
-
-        TODO:
-            - Check self.conn is not None, else warn user to connect first
-            - Get SQL from self.query_input.get("1.0", "end").strip()
-            - Call validate_query(sql) — show warning if invalid
-            - Update status bar: "Fetching QEP from PostgreSQL..."
-            - Call get_qep(self.conn, sql)
-            - Update status bar: "Fetching Alternative Query Plans (AQPs)..."
-            - Call get_all_aqps(self.conn, sql)
-            - Update status bar: "Generating annotations..."
-            - Call generate_annotations(qep, aqps)
-            - Call _display_annotations(sql, result)
-            - Call _populate_qep_tree(qep)
-            - Update status bar: "Done."
-            - On any exception: show messagebox.showerror(), reset status bar
         """
-        # Dummydata
-        # qep = get_dummy_qep()
-        # aqps = get_dummy_aqps()
-        # result = generate_annotations(qep, aqps)
-        # self._display_annotations(DUMMY_SQL, result)
-        # self._populate_qep_tree(qep)
-        # self._update_status("Done.")
-        # return
-
         try:
             if not self.conn:
                 messagebox.showwarning("Not Connected", "Please connect to the database first.")
@@ -729,50 +664,6 @@ class TpcHAnnotatorApp:
 
             widget.insert("end", text, tag)
         widget.insert("end", "\n")
-
-    # def _display_annotations(self, sql: str, annotation_result: dict):
-    #     """
-    #     Writes the annotated output to the middle panel with color-coded tags.
-
-    #     Args:
-    #         sql (str): The original SQL query string.
-    #         annotation_result (dict): Output of generate_annotations()
-    #                                   Keys: "scans", "joins", "others", "full_text"
-
-    #     TODO:
-    #         - Enable self.annotation_output (config state="normal")
-    #         - Clear existing content
-    #         - Insert original SQL with "sql" tag
-    #         - Insert "--- Scan Operations ---" header with "header" tag
-    #         - Insert each item from annotation_result["scans"] with "scan" tag
-    #         - Insert "--- Join Operations ---" header with "header" tag
-    #         - Insert each item from annotation_result["joins"] with "join" tag
-    #         - Insert "--- Other Operations ---" header with "header" tag
-    #         - Insert each item from annotation_result["others"] with "other" tag
-    #         - Disable self.annotation_output again (config state="disabled")
-    #     """
-
-    #     self.annotation_output.config(state="normal")
-    #     self.annotation_output.delete("1.0", "end")
-
-    #     self.annotation_output.insert("end", "Original SQL Query\n", "header")
-    #     self.annotation_output.insert("end", f"{sql}\n\n", "sql")
-
-    #     self.annotation_output.insert("end", "--- Scan Operations ---\n", "header")
-    #     for item in annotation_result.get("scans", []):
-    #         self.annotation_output.insert("end", f"- {item}\n", "scan")
-    #     self.annotation_output.insert("end", "\n")
-
-    #     self.annotation_output.insert("end", "--- Join Operations ---\n", "header")
-    #     for item in annotation_result.get("joins", []):
-    #         self.annotation_output.insert("end", f"- {item}\n", "join")
-    #     self.annotation_output.insert("end", "\n")
-
-    #     self.annotation_output.insert("end", "--- Other Operations ---\n", "header")
-    #     for item in annotation_result.get("others", []):
-    #         self.annotation_output.insert("end", f"- {item}\n", "other")
-
-    #     self.annotation_output.config(state="disabled")
 
     def _display_annotations(self, sql: str, annotation_result: dict):
         out = self.annotation_output

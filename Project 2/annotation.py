@@ -75,14 +75,6 @@ def get_cost_comparison_reasons(qep_cost: float, aqps: dict,
     Returns:
         list[str]: Reason strings e.g. ["Merge Join costs ~7.2x more",
                                          "Nested Loop costs ~10.4x more"]
-
-    TODO:
-        - Loop through aqps.items()
-        - Skip if label == skip_label or if plan is None
-        - Call get_root_cost() on the AQP plan
-        - Call compare_costs() to get the ratio
-        - Only add a reason if ratio > 1.0 (AQP is more expensive)
-        - Format reason as: "<AQP_LABEL_MAP[label]> costs ~<ratio>x more"
     """
     reasons = []
     for label, plan in aqps.items():
@@ -109,28 +101,6 @@ def annotate_scans(qep_nodes: list) -> list:
 
     Returns:
         list[str]: One annotation string per scan node found.
-
-    TODO:
-        - Filter nodes where node["Node Type"] is in SCAN_NODES
-        - For each scan node, extract:
-            - "Relation Name" → the table being scanned
-            - "Node Type"     → the scan operator used
-            - "Index Name"    → only present for Index Scan / Index Only Scan
-            - "Filter"        → only present if a WHERE filter was applied
-        - Write a different annotation message per scan type:
-            * Seq Scan:
-                "Table '<table>' is read using Sequential Scan.
-                 This is likely because no usable index exists on the filtered columns."
-            * Index Scan / Index Only Scan:
-                "Table '<table>' is accessed via Index Scan on '<index_name>'.
-                 An index was available and used to avoid a full table scan."
-            * Bitmap Heap Scan:
-                "Table '<table>' is accessed via Bitmap Heap Scan.
-                 This handles multiple matching rows efficiently using a bitmap."
-            * Default fallback:
-                "Table '<table>' is accessed using <node_type>."
-        - Append filter info if "Filter" key exists:
-            " Filter applied: <filter>"
     """
     annotations = []
     for node in qep_nodes:
@@ -179,28 +149,6 @@ def annotate_joins(qep_nodes: list, aqps: dict, qep_cost: float) -> list:
 
     Returns:
         list[str]: One annotation string per join node found.
-
-    TODO:
-        - Filter nodes where node["Node Type"] is in JOIN_NODES
-        - For each join node, extract:
-            - "Node Type"       → join operator (Hash Join, Merge Join, Nested Loop)
-            - "Join Type"       → e.g. Inner, Left, Semi
-            - "Hash Cond"       → present for Hash Join (the join condition)
-            - "Merge Cond"      → present for Merge Join
-            - "Join Filter"     → present for Nested Loop
-        - Map join type → AQP skip label:
-            {
-                "Hash Join":   "no_hashjoin",
-                "Merge Join":  "no_mergejoin",
-                "Nested Loop": "no_nestloop",
-            }
-        - Call get_cost_comparison_reasons() with the correct skip_label
-        - Build annotation:
-            "This join is implemented using <join_type> (<join_kind> join).
-             <condition if available>
-             Alternatives were not chosen: <reasons>."
-          OR if no reasons found (no cheaper AQP):
-            "This join is implemented using <join_type>."
     """
     annotations = []
     skip_map = {
@@ -253,25 +201,6 @@ def annotate_others(qep_nodes: list) -> list:
 
     Returns:
         list[str]: One annotation string per relevant node found.
-
-    TODO:
-        - Filter nodes where node["Node Type"] is in OTHER_NODES
-        - Handle each type separately:
-            * Sort:
-                - Extract "Sort Key" list
-                - "Results are sorted by: <keys>."
-            * Aggregate / Hash Aggregate / Group Aggregate:
-                - Extract "Strategy" if available
-                - "Aggregation is performed using <strategy> strategy."
-            * Limit:
-                - "Result set is limited to a fixed number of rows (LIMIT clause)."
-            * Unique:
-                - "Duplicate rows are removed (DISTINCT or UNION clause)."
-            * Materialize:
-                - "Intermediate results are materialized (stored temporarily)
-                   to avoid re-scanning."
-            * Default fallback for anything else in OTHER_NODES:
-                - "Operation: <node_type> (cost: <total_cost>)."
     """
     annotations = []
     for node in qep_nodes:
@@ -321,14 +250,6 @@ def generate_annotations(qep: dict, aqps: dict) -> dict:
                 "full_text": str          # all annotations joined as one string
             }
 
-    TODO:
-        - Call parse_plan_nodes(qep) to get a flat node list
-        - Call get_root_cost(qep) to get the QEP's total cost
-        - Call annotate_scans(nodes)
-        - Call annotate_joins(nodes, aqps, qep_cost)
-        - Call annotate_others(nodes)
-        - Combine all lists into "full_text" using "\n".join()
-        - Return the structured dict
     """
     nodes = parse_plan_nodes(qep)
     qep_cost = get_root_cost(qep)
