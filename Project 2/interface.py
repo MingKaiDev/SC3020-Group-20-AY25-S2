@@ -269,25 +269,7 @@ class TpcHAnnotatorApp:
         return frame
 
     def _build_middle_panel(self, parent) -> tk.Frame:
-        """
-        Builds the MIDDLE panel: Annotated query output display.
-
-        Contains:
-            - Label: "Annotated Output"
-            - ScrolledText box (read-only) showing annotated SQL
-            - Color-coded text tags:
-                * SQL lines    → blue / dark
-                * Scan notes   → green
-                * Join notes   → orange
-                * Other notes  → grey
-            - Optional: "Copy to Clipboard" button
-
-        Args:
-            parent: The PanedWindow to attach this panel to.
-
-        Returns:
-            tk.LabelFrame: The completed middle panel frame.
-        """
+        """Builds the middle panel: Annotated query output display."""
         frame = tk.LabelFrame(parent, text="Annotated Output")
         self.annotation_output = scrolledtext.ScrolledText(frame, wrap="word", state="disabled", height=18)
         self.annotation_output.pack(fill="both", expand=True, padx=8, pady=8)
@@ -308,6 +290,7 @@ class TpcHAnnotatorApp:
         return frame
 
     def _build_right_panel(self, parent) -> tk.Frame:
+        """Builds the right panel: QEP + Cost Chart display."""
         frame = tk.LabelFrame(parent, text="Query Execution Plan (QEP)")
 
         zoom_bar = tk.Frame(frame)
@@ -369,10 +352,7 @@ class TpcHAnnotatorApp:
         return frame
 
     def _build_status_bar(self):
-        """
-        Builds a slim status bar at the very bottom of the window.
-        Shows real-time status messages (e.g. "Fetching QEP...", "Done.").
-        """
+        """Builds a status bar at the very bottom of the window."""
         self.status_bar = tk.Label(
             self.root,
             text="Ready.",
@@ -425,10 +405,7 @@ class TpcHAnnotatorApp:
         self.status_lbl.config(text="Not connected", fg="red")
 
     def _run_annotation(self): 
-        """
-        Handles the "Annotate Query" button click.
-        Orchestrates the full pipeline: validate → QEP → AQPs → annotate → display.
-        """
+        """Orchestrates the full pipeline: validate → QEP → AQPs → annotate → display."""
         try:
             if not self.conn:
                 messagebox.showwarning("Not Connected", "Please connect to the database first.")
@@ -580,10 +557,7 @@ class TpcHAnnotatorApp:
 # =============================================================================
 
     def _insert_highlighted_sql(self, widget, line: str):
-        """
-        Inserts one SQL line into `widget` with token-level syntax highlighting.
-        Uses character-level tags applied token by token.
-        """
+        """Inserts one SQL line into `widget` with token-level syntax highlighting."""
         for m in _SQL_TOKEN_RE.finditer(line):
             kind = m.lastgroup
             text = m.group()
@@ -658,12 +632,12 @@ class TpcHAnnotatorApp:
             out.insert("end", f"• {item}\n", tag)
 
     def _display_annotations(self, sql: str, annotation_result: dict):
+        """Render annotated SQL and grouped operator notes in the output panel."""
         out = self.annotation_output
         out.config(state="normal")
         out.delete("1.0", "end")
         self._configure_tags(out)
 
-        #Annotated SQL
         out.insert("end", "  Annotated SQL  \n", "section_header")
         out.insert("end", "\n")
 
@@ -679,7 +653,6 @@ class TpcHAnnotatorApp:
         else:
             out.insert("end", sql + "\n", "sql")
 
-        #Operations
         self._insert_section(out, "Scan Operations",  annotation_result.get("scans",  []), "scan")
         self._insert_section(out, "Join Operations",  annotation_result.get("joins",  []), "join")
         self._insert_section(out, "Other Operations", annotation_result.get("others", []), "other")
@@ -920,12 +893,7 @@ class TpcHAnnotatorApp:
             self._canvas_tooltip.register(item_id, tip_text)
 
     def _update_status(self, message: str):
-        """
-        Updates the bottom status bar with a new message.
-
-        Args:
-            message (str): Status message to display.
-        """
+        """Updates the bottom status bar with a new message."""
         self.status_bar.config(text=message)
         self.root.update_idletasks()
 
