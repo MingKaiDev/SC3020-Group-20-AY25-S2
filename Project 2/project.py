@@ -25,7 +25,7 @@ def configure_window(root: tk.Tk):
     Args:
         root (tk.Tk): The root Tkinter window.
     """
-    root.title("SC3020 Project 2 — SQL Query Annotator")
+    root.title("SC3020 Project 2 Group 20 SQL Query Annotator")
     screen_w = root.winfo_screenwidth()
     screen_h = root.winfo_screenheight()
     x = (screen_w // 2) - (1600 // 2)
