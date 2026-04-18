@@ -1,23 +1,14 @@
 # interface.py
-# Responsibilities:
-#   - Provide a user-friendly GUI for the SQL Query Annotator
-#   - Allow user to connect to the PostgreSQL database
-#   - Accept SQL query input (typed or pasted)
-#   - Trigger annotation pipeline (preprocessing → annotation)
-#   - Display annotated query output in a readable format
-#   - Visualize the QEP as a tree structure
-#   - Handle and display errors gracefully to the user
 
 import tkinter as tk
-import re
-import datetime
+import re, datetime
 
 from tkinter import ttk, scrolledtext, messagebox, font
 from preprocessing import get_connection, close_connection, get_qep, get_all_aqps, validate_query, get_root_cost
 from annotation import generate_annotations
 
 # =============================================================================
-# SECTION 0: VISUAL TREE CONSTANTS
+# SECTION 0: CONSTANTS
 # =============================================================================
 
 NODE_W,NODE_H = 160,50 # width and height of each node rectangle
@@ -30,25 +21,16 @@ NODE_COLORS = {
     "other": {"fill": "#D6E4F7", "outline": "#5B9BD5", "text": "#1a3a5c"},
 }
 
-# ── AQP bar-chart colour palette ─────────────────────────────────────────────
-_CHART_COLORS = {
-    "qep":          "#28A745",
-    "no_hashjoin":  "#5B9BD5",
-    "no_mergejoin": "#FFC107",
-    "no_nestloop":  "#E74C3C",
-    "no_seqscan":   "#9B59B6",
-    "no_indexscan": "#E67E22",
-}
-_CHART_LABELS = {
-    "qep":          "QEP (chosen)",
-    "no_hashjoin":  "No Hash Join",
-    "no_mergejoin": "No Merge Join",
-    "no_nestloop":  "No Nested Loop",
-    "no_seqscan":   "No Seq Scan",
-    "no_indexscan": "No Index Scan",
+
+_CHART_PROPERTIES = {
+    "qep":          ["#28A745","QEP (chosen)"],
+    "no_hashjoin":  ["#5B9BD5","No Hash Join"],
+    "no_mergejoin": ["#FFC107","No Merge Join"],
+    "no_nestloop":  ["#E74C3C","No Nested Loop"],
+    "no_seqscan":   ["#9B59B6","No Seq Scan"],
+    "no_indexscan": ["#E67E22","No Index Scan"],
 }
 
-# ── SQL syntax highlighting token definitions ─────────────────────────────────
 _SQL_KEYWORDS = {
     'select','from','where','join','inner','outer','left','right','cross',
     'full','on','and','or','not','as','in','is','null','between','like',
@@ -809,13 +791,12 @@ class TpcHAnnotatorApp:
         W = c.winfo_width()  or 380
         H = c.winfo_height() or 300
 
-        # Build ordered rows: QEP first, then each AQP
-        rows = [("qep", _CHART_LABELS["qep"], qep_cost,
-                _CHART_COLORS["qep"])]
+        rows = [("qep", _CHART_PROPERTIES["qep"][1], qep_cost,
+                _CHART_PROPERTIES["qep"][0])]
         for key, plan in aqps.items():
             cost  = get_root_cost(plan) if plan else float("inf")
-            label = _CHART_LABELS.get(key, key)
-            color = _CHART_COLORS.get(key, "#888888") \
+            label = _CHART_PROPERTIES.get(key, key)[1]
+            color = _CHART_PROPERTIES.get(key, "#888888")[0] \
                     if cost != float("inf") else "#CCCCCC"
             rows.append((key, label, cost, color))
 
