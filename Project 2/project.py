@@ -65,33 +65,6 @@ def check_db_connection() -> bool:
         return response
 
 
-def check_dependencies() -> bool:
-    """
-    Verifies that all required third-party Python packages are installed.
-    Exits with a clear error message if any are missing.
-
-    Returns:
-        bool: True if all dependencies are present.
-    """
-
-    required = [
-        ("psycopg", "psycopg"),
-        ("dotenv", "python-dotenv"),
-    ]
-
-    for module, install_name in required:
-        try:
-            if module == "dotenv":
-                from dotenv import load_dotenv
-            else:
-                __import__(module)
-        except ImportError:
-            msg = f"Missing dependency: {install_name}. Run: pip install {install_name}"
-            print(msg)
-            return False
-    return True
-
-
 # =============================================================================
 # SECTION 3: APPLICATION LAUNCH
 # =============================================================================
@@ -100,8 +73,6 @@ def launch_app():
     """
     Main launch function. Runs pre-checks then starts the GUI.
     """
-    if not check_dependencies():
-        sys.exit(1)
     if not check_db_connection():
         sys.exit(0)
     root = tk.Tk()
