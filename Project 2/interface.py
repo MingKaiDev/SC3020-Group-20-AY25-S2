@@ -168,8 +168,7 @@ class _CanvasTooltip:
 
 class TpcHAnnotatorApp:
     """
-    Main GUI application class for the SC3020 Project 2 SQL Annotator.
-    Built using Python's built-in Tkinter library.
+    Main GUI application class.
 
     Layout (3-panel horizontal) (Tentative):
     ┌─────────────────┬──────────────────────┬─────────────────┐
@@ -181,9 +180,6 @@ class TpcHAnnotatorApp:
     def __init__(self, root: tk.Tk):
         """
         Initialises the application window and builds all UI components.
-
-        Args:
-            root (tk.Tk): The root Tkinter window passed from project.py.
         """
         self.root = root
         self.db_connected = False
@@ -208,7 +204,6 @@ class TpcHAnnotatorApp:
             - "Connect to DB" / "Disconnect from DB" button (toggles)
             - Connection status label → shows "Connected" or "Not connected"
             - "Clear All" button
-            - Optional: DB name label
         """
         top_bar = tk.Frame(self.root)
         top_bar.pack(fill="x", padx=10, pady=5)
@@ -264,7 +259,7 @@ class TpcHAnnotatorApp:
         Contains:
             - Label: "SQL Query Input"
             - ScrolledText box for typing/pasting SQL
-            - "▶ Annotate Query" button → calls _run_annotation()
+            - "Annotate Query" button → calls _run_annotation()
             - Optional: dropdown to select dataset (TPC-H / IMDB) #note not implemented
 
         Args:
@@ -447,11 +442,7 @@ class TpcHAnnotatorApp:
             self._connect_db()
 
     def _connect_db(self):
-        """
-        Handles the "Connect to DB" button click.
-        Establishes a database connection and updates the status label.
-
-        """
+        """Handles the "Connect to DB" button click."""
         
         self._update_status("Connecting to database...")
 
@@ -475,17 +466,14 @@ class TpcHAnnotatorApp:
 
     def _disconnect_db(self):
         """Handles DB disconnection logic."""
-        # --- close the connection ---
-        # e.g. self.conn.close()
         close_connection(self.conn)
-        # Update state and UI:
         self.db_connected = False
         self.connect_btn.config(text="Connect to DB", bg="#4CAF50")
         self.status_lbl.config(text="Not connected", fg="red")
 
     def _run_annotation(self): 
         """
-        Handles the "▶ Annotate Query" button click.
+        Handles the "Annotate Query" button click.
         Orchestrates the full pipeline: validate → QEP → AQPs → annotate → display.
         """
         try:
@@ -665,103 +653,60 @@ class TpcHAnnotatorApp:
             widget.insert("end", text, tag)
         widget.insert("end", "\n")
 
+
+    def _configure_tags(self, out):
+        CONSOLAS = ("Consolas", 10)
+        ARIAL9I  = ("Arial", 9, "italic")
+        ARIAL9   = ("Arial", 9)
+        ARIAL10B = ("Arial", 10, "bold")
+        LM10 = dict(lmargin1=10, lmargin2=10)
+
+        tags = {
+            "section_header": dict(foreground="#FFFFFF", background="#3A3A5C",
+                                font=("Arial", 10, "bold"), spacing1=6, spacing3=6,
+                                lmargin1=0, lmargin2=0),
+            "sql_kw":    dict(foreground="#0000CC", font=(*CONSOLAS, "bold"),
+                            spacing1=1, spacing3=1, **LM10),
+            "sql_fn":    dict(foreground="#7B2FBE", font=(*CONSOLAS, "bold"), **LM10),
+            "sql_ident": dict(foreground="#1a1a1a", font=CONSOLAS, **LM10),
+            "sql_str":   dict(foreground="#2E7D32", font=CONSOLAS, **LM10),
+            "sql_num":   dict(foreground="#E65100", font=CONSOLAS, **LM10),
+            "sql_op":    dict(foreground="#00838F", font=(*CONSOLAS, "bold"), **LM10),
+            "sql_punct": dict(foreground="#555555", font=CONSOLAS, **LM10),
+            "sql_ws":    dict(font=CONSOLAS, **LM10),
+            "clause_note": dict(foreground="#8B4513", font=ARIAL9I,
+                                spacing1=0, spacing3=4, lmargin1=24, lmargin2=30),
+            "scan_header":  dict(foreground="#1a7a2e", font=ARIAL10B, spacing1=10, spacing3=4),
+            "join_header":  dict(foreground="#b35900", font=ARIAL10B, spacing1=10, spacing3=4),
+            "other_header": dict(foreground="#4a4aaa", font=ARIAL10B, spacing1=10, spacing3=4),
+            "scan":  dict(foreground="#1a7a2e", font=ARIAL9, spacing1=2, spacing3=4,
+                        lmargin1=14, lmargin2=22),
+            "join":  dict(foreground="#b35900", font=ARIAL9, spacing1=2, spacing3=4,
+                        lmargin1=14, lmargin2=22),
+            "other": dict(foreground="#4a4aaa", font=ARIAL9, spacing1=2, spacing3=4,
+                        lmargin1=14, lmargin2=22),
+            "divider": dict(foreground="#CCCCCC", spacing1=4, spacing3=4),
+        }
+        for tag, cfg in tags.items():
+            out.tag_config(tag, **cfg)
+
+
+    def _insert_section(self, out, title, items, tag):
+        if not items:
+            return
+        out.insert("end", "\n")
+        out.insert("end", f"  {title}  \n", "section_header")
+        out.insert("end", "\n")
+        for item in items:
+            out.insert("end", f"• {item}\n", tag)
+
     def _display_annotations(self, sql: str, annotation_result: dict):
         out = self.annotation_output
         out.config(state="normal")
         out.delete("1.0", "end")
+        self._configure_tags(out)
 
-        # ── Tag definitions ──────────────────────────────────────────────────────
-        out.tag_config("section_header",
-            foreground="#FFFFFF", background="#3A3A5C",
-            font=("Arial", 10, "bold"),
-            spacing1=6, spacing3=6,     # padding above/below the header line
-            lmargin1=0, lmargin2=0,
-        )
-        out.tag_config("sql_kw",
-            foreground="#0000CC",               # bold blue  — SELECT, FROM, WHERE…
-            font=("Consolas", 10, "bold"),
-            spacing1=1, spacing3=1,
-            lmargin1=10, lmargin2=10,
-        )
-        out.tag_config("sql_fn",
-            foreground="#7B2FBE",               # purple — SUM, COUNT, AVG…
-            font=("Consolas", 10, "bold"),
-            lmargin1=10, lmargin2=10,
-        )
-        out.tag_config("sql_ident",
-            foreground="#1a1a1a",               # near-black — table/column names
-            font=("Consolas", 10),
-            lmargin1=10, lmargin2=10,
-        )
-        out.tag_config("sql_str",
-            foreground="#2E7D32",               # dark green — 'string literals'
-            font=("Consolas", 10),
-            lmargin1=10, lmargin2=10,
-        )
-        out.tag_config("sql_num",
-            foreground="#E65100",               # burnt orange — numbers
-            font=("Consolas", 10),
-            lmargin1=10, lmargin2=10,
-        )
-        out.tag_config("sql_op",
-            foreground="#00838F",               # teal — = > < * operators
-            font=("Consolas", 10, "bold"),
-            lmargin1=10, lmargin2=10,
-        )
-        out.tag_config("sql_punct",
-            foreground="#555555",               # grey — ( ) , . ;
-            font=("Consolas", 10),
-            lmargin1=10, lmargin2=10,
-        )
-        out.tag_config("sql_ws",
-            font=("Consolas", 10),
-            lmargin1=10, lmargin2=10,
-        )
-        out.tag_config("clause_note",
-            foreground="#8B4513",
-            font=("Arial", 9, "italic"),
-            spacing1=0, spacing3=4,
-            lmargin1=24, lmargin2=30,   # lmargin2 slightly more to align under "- "
-        )
-        out.tag_config("scan_header",
-            foreground="#1a7a2e",
-            font=("Arial", 10, "bold"),
-            spacing1=10, spacing3=4,
-        )
-        out.tag_config("join_header",
-            foreground="#b35900",
-            font=("Arial", 10, "bold"),
-            spacing1=10, spacing3=4,
-        )
-        out.tag_config("other_header",
-            foreground="#4a4aaa",
-            font=("Arial", 10, "bold"),
-            spacing1=10, spacing3=4,
-        )
-        out.tag_config("scan",
-            foreground="#1a7a2e",
-            font=("Arial", 9),
-            spacing1=2, spacing3=4,
-            lmargin1=14, lmargin2=22,   # hanging indent for wrapped lines
-        )
-        out.tag_config("join",
-            foreground="#b35900",
-            font=("Arial", 9),
-            spacing1=2, spacing3=4,
-            lmargin1=14, lmargin2=22,
-        )
-        out.tag_config("other",
-            foreground="#4a4aaa",
-            font=("Arial", 9),
-            spacing1=2, spacing3=4,
-            lmargin1=14, lmargin2=22,
-        )
-        out.tag_config("divider",
-            foreground="#CCCCCC",
-            spacing1=4, spacing3=4,
-        )
-
-        # ── Section 1: Annotated SQL ─────────────────────────────────────────────
+        #Annotated SQL
         out.insert("end", "  Annotated SQL  \n", "section_header")
         out.insert("end", "\n")
 
@@ -772,38 +717,15 @@ class TpcHAnnotatorApp:
                     continue
                 self._insert_highlighted_sql(out, sql_line)
                 if note:
-                    # Split long notes at " | " so each gets its own ↳ line
                     for part in note.split(" | "):
                         out.insert("end", f"    - {part.strip()}\n", "clause_note")
         else:
             out.insert("end", sql + "\n", "sql")
 
-        # ── Section 2: Scan Operations ───────────────────────────────────────────
-        scans = annotation_result.get("scans", [])
-        if scans:
-            out.insert("end", "\n")
-            out.insert("end", "  Scan Operations  \n", "section_header")
-            out.insert("end", "\n")
-            for item in scans:
-                out.insert("end", f"• {item}\n", "scan")
-
-        # ── Section 3: Join Operations ───────────────────────────────────────────
-        joins = annotation_result.get("joins", [])
-        if joins:
-            out.insert("end", "\n")
-            out.insert("end", "  Join Operations  \n", "section_header")
-            out.insert("end", "\n")
-            for item in joins:
-                out.insert("end", f"• {item}\n", "join")
-
-        # ── Section 4: Other Operations ──────────────────────────────────────────
-        others = annotation_result.get("others", [])
-        if others:
-            out.insert("end", "\n")
-            out.insert("end", "  Other Operations  \n", "section_header")
-            out.insert("end", "\n")
-            for item in others:
-                out.insert("end", f"• {item}\n", "other")
+        #Operations
+        self._insert_section(out, "Scan Operations",  annotation_result.get("scans",  []), "scan")
+        self._insert_section(out, "Join Operations",  annotation_result.get("joins",  []), "join")
+        self._insert_section(out, "Other Operations", annotation_result.get("others", []), "other")
 
         out.config(state="disabled")
 
