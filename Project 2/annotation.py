@@ -142,13 +142,6 @@ def annotate_joins(qep_nodes: list, aqps: dict, qep_cost: float) -> list:
     Generates annotation strings for all join operations found in the QEP.
     Uses AQP cost comparisons to explain WHY the chosen join was selected.
 
-    Args:
-        qep_nodes (list): Flat list of all QEP nodes (from parse_plan_nodes).
-        aqps (dict): Dict of label → AQP plan (from get_all_aqps).
-        qep_cost (float): Total cost of the QEP root (from get_root_cost).
-
-    Returns:
-        list[str]: One annotation string per join node found.
     """
     annotations = []
     skip_map = {
@@ -232,23 +225,10 @@ def annotate_others(qep_nodes: list) -> list:
 # SECTION 6: MASTER ANNOTATION FUNCTION
 # =============================================================================
 
-def generate_annotations(qep: dict, aqps: dict) -> dict:
+def generate_annotations(qep: dict, aqps: dict, sql: str) -> dict:
     """
     Master function that orchestrates all annotation steps.
     Called by interface.py after preprocessing fetches the QEP and AQPs.
-
-    Args:
-        qep (dict): The full QEP plan dict (output of get_qep).
-        aqps (dict): Dict of AQP label → plan dict (output of get_all_aqps).
-
-    Returns:
-        dict: Structured annotation result with keys:
-            {
-                "scans":     list[str],   # scan annotations
-                "joins":     list[str],   # join annotations
-                "others":    list[str],   # other operation annotations
-                "full_text": str          # all annotations joined as one string
-            }
 
     """
     nodes = parse_plan_nodes(qep)
@@ -257,22 +237,17 @@ def generate_annotations(qep: dict, aqps: dict) -> dict:
     scans = annotate_scans(nodes)
     joins = annotate_joins(nodes, aqps, qep_cost)
     others = annotate_others(nodes)
-
+    clause_map = map_sql_clauses(sql, nodes)
     full_text = "\n".join(scans + joins + others)
+
     return {
         "scans": scans,
         "joins": joins,
         "others": others,
-        "clause_map": [],
+        "clause_map": clause_map,
         "full_text": full_text,
     }
 
-def generate_annotations_with_sql(qep: dict, aqps: dict, sql: str) -> dict:
-    """Extended version that also populates clause_map for inline SQL annotation."""
-    result = generate_annotations(qep, aqps)
-    nodes  = parse_plan_nodes(qep)
-    result["clause_map"] = map_sql_clauses(sql, nodes)
-    return result
 # =============================================================================
 # SECTION 7: SQL CLAUSE-LEVEL ANNOTATION
 # =============================================================================

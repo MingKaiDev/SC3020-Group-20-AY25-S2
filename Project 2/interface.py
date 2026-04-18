@@ -14,7 +14,7 @@ import datetime
 
 from tkinter import ttk, scrolledtext, messagebox, font
 from preprocessing import get_connection, close_connection, get_qep, get_all_aqps, validate_query, get_root_cost
-from annotation import generate_annotations_with_sql
+from annotation import generate_annotations
 
 # =============================================================================
 # SECTION 0: VISUAL TREE CONSTANTS
@@ -512,7 +512,7 @@ class TpcHAnnotatorApp:
             aqps = get_all_aqps(self.conn, sql)
 
             self._update_status("Generating annotations...")
-            result = generate_annotations_with_sql(qep, aqps, sql)
+            result = generate_annotations(qep, aqps, sql)
 
             self._display_annotations(sql, result)
             self._populate_qep_tree(qep)
