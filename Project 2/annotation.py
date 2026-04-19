@@ -1,11 +1,3 @@
-# annotation.py
-# Responsibilities:
-#   - Receive parsed QEP and AQPs from preprocessing.py
-#   - Identify operators used in the QEP (scans, joins, aggregations, sorts, etc.)
-#   - Compare QEP costs against AQP costs to explain WHY operators were chosen
-#   - Generate human-readable annotation strings for each SQL clause/component
-#   - Return a structured annotation result to interface.py
-
 import re
 from preprocessing import parse_plan_nodes, get_root_cost
 
@@ -31,10 +23,10 @@ OTHER_NODES = {
 # AQP label -> human-readable description of what was disabled.
 # "no_hashjoin" means PostgreSQL produced a plan WITHOUT Hash Join.
 AQP_LABEL_MAP = {
-    "no_hashjoin":  "without Hash Join",
+    "no_hashjoin": "without Hash Join",
     "no_mergejoin": "without Merge Join",
-    "no_nestloop":  "without Nested Loop",
-    "no_seqscan":   "without Sequential Scan",
+    "no_nestloop": "without Nested Loop",
+    "no_seqscan": "without Sequential Scan",
     "no_indexscan": "without Index Scan",
 }
 
@@ -43,14 +35,7 @@ AQP_LABEL_MAP = {
 # =============================================================================
 
 def compare_costs(qep_cost: float, aqp_cost: float) -> float:
-    """
-    Computes how many times more expensive an AQP is compared to the QEP.
-
-    Returns:
-        float: The cost ratio (aqp_cost / qep_cost), rounded to 1 decimal.
-               Returns 0.0 if qep_cost is zero or infinite.
-               Returns float('inf') if aqp_cost is infinite but qep_cost is finite.
-    """
+    """Computes how many times more expensive an AQP is compared to the QEP."""
     if qep_cost is None or aqp_cost is None:
         return 0.0
     if qep_cost <= 0 or qep_cost == float("inf"):
@@ -72,15 +57,8 @@ def _format_cost(cost: float) -> str:
     return f"{cost:,.1f}"
 
 
-def get_cost_comparison_reasons(qep_cost: float, aqps: dict,
-                                skip_label: str = None) -> list:
-    """
-    Compares the QEP root cost against all available AQP root costs.
-    Returns reason strings explaining why alternatives were more expensive.
-
-    The comparison is at whole-query level -- AQP root cost vs QEP root cost.
-    skip_label, if provided, causes that AQP entry to be skipped.
-    """
+def get_cost_comparison_reasons(qep_cost: float, aqps: dict, skip_label: str = None) -> list:
+    """ Compares the QEP root cost against all available AQP root costs."""
     reasons = []
     for label, plan in (aqps or {}).items():
         if label == skip_label or plan is None:
@@ -106,9 +84,7 @@ def get_cost_comparison_reasons(qep_cost: float, aqps: dict,
 # =============================================================================
 
 def annotate_scans(qep_nodes: list) -> list:
-    """
-    Generates annotation strings for all scan operations found in the QEP.
-    """
+    """ Generates annotation strings for all scan operations found in the QEP."""
     annotations = []
     for node in qep_nodes:
         node_type = node.get("Node Type", "")
@@ -188,14 +164,7 @@ def annotate_scans(qep_nodes: list) -> list:
 # =============================================================================
 
 def annotate_joins(qep_nodes: list, aqps: dict, qep_cost: float) -> list:
-    """
-    Generates annotation strings for all join operations found in the QEP.
-
-    Structure:
-    1. Individual join node annotations (type, condition, node cost).
-    2. A separate AQP comparison summary appended at the end, showing one
-       whole-query cost comparison per join operator type.
-    """
+    """ Generates annotation strings for all join operations found in the QEP. """
     annotations = []
     join_types_seen = set()
 
@@ -257,7 +226,7 @@ def annotate_joins(qep_nodes: list, aqps: dict, qep_cost: float) -> list:
 
         annotations.append(text)
 
-    # --- AQP comparison summary (one entry per join operator type) ---
+    # AQP comparison summary (one entry per join operator type) 
     if join_types_seen and aqps:
         summary_lines = []
         for jtype in ("Hash Join", "Merge Join", "Nested Loop"):
@@ -292,14 +261,7 @@ def annotate_joins(qep_nodes: list, aqps: dict, qep_cost: float) -> list:
 # =============================================================================
 
 def annotate_others(qep_nodes: list) -> list:
-    """
-    Generates annotation strings for non-scan, non-join operations
-    such as Sort, Aggregate, Limit, Hash, Materialize, etc.
-
-    - Hash nodes are skipped (internal helper for Hash Join, already explained).
-    - Duplicate Aggregate annotations (same strategy + group keys) are skipped.
-      Different strategies or group keys are kept visible.
-    """
+    """ Generates annotation strings for non-scan, non-join operations such as Sort, Aggregate, Limit, Hash, Materialize, etc."""
     annotations = []
     seen_aggregate_keys = set()
 
@@ -308,7 +270,7 @@ def annotate_others(qep_nodes: list) -> list:
         if node_type not in OTHER_NODES:
             continue
 
-        # Skip standalone Hash nodes -- they are internal to Hash Join.
+        # Skip standalone Hash nodes as they are internal to Hash Join.
         if node_type == "Hash":
             continue
 
@@ -403,13 +365,13 @@ def annotate_others(qep_nodes: list) -> list:
         elif node_type == "BitmapAnd":
             text = (
                 "A BitmapAnd operation combines multiple bitmap index results "
-                "using a logical AND -- only rows matching all conditions are kept."
+                "using a logical AND, only rows matching all conditions are kept."
             )
 
         elif node_type == "BitmapOr":
             text = (
                 "A BitmapOr operation combines multiple bitmap index results "
-                "using a logical OR -- rows matching any condition are kept."
+                "using a logical OR, rows matching any condition are kept."
             )
 
         else:
@@ -451,11 +413,7 @@ def generate_annotations(qep: dict, aqps: dict, sql: str) -> dict:
 # =============================================================================
 
 def _extract_join_tokens(condition: str) -> set:
-    """
-    Extract normalised column-name tokens from a join condition string.
-    Strips parentheses, whitespace, casts (::type), and lowercases everything.
-    Returns a set of tokens like {'c_custkey', 'o_custkey'}.
-    """
+    """Extract normalised column-name tokens from a join condition string."""
     s = condition.lower()
     # Remove parentheses and casts like ::bigint
     s = re.sub(r'::\w+', '', s)
@@ -474,11 +432,9 @@ def _extract_join_tokens(condition: str) -> set:
 
 
 def _match_join_condition(sql_on_cond: str, qep_cond: str) -> bool:
-    """
-    Returns True if the SQL ON condition and QEP join condition refer to the
+    """ Returns True if the SQL ON condition and QEP join condition refer to the
     same column pair. Robust to case, parens, whitespace, alias differences,
-    and operand order reversal (a = b vs b = a).
-    """
+    and operand order reversal (a = b vs b = a)."""
     sql_tokens = _extract_join_tokens(sql_on_cond)
     qep_tokens = _extract_join_tokens(qep_cond)
     if not sql_tokens or not qep_tokens:
@@ -488,15 +444,7 @@ def _match_join_condition(sql_on_cond: str, qep_cond: str) -> bool:
 
 
 def map_sql_clauses(sql: str, qep_nodes: list) -> list:
-    """
-    Maps each line of the SQL query to a relevant QEP annotation.
-    Returns list of (original_sql_line, annotation_str_or_None).
-
-    NOTE: This mapping is heuristic. PostgreSQL's optimizer may reorder joins,
-    push down predicates, or transform the query in ways that make an exact
-    1-to-1 mapping between SQL text and plan nodes impossible. The annotations
-    here are best-effort guidance.
-    """
+    """Maps each line of the SQL query to a relevant QEP annotation."""
     _SQL_KEYWORDS = {
         "select", "from", "where", "join", "inner", "outer", "left", "right",
         "cross", "on", "and", "or", "not", "as", "in", "is", "null",
@@ -537,8 +485,6 @@ def map_sql_clauses(sql: str, qep_nodes: list) -> list:
                 scan_notes[al] = note
 
         # Collect join nodes with ALL available conditions for matching.
-        # PostgreSQL can freely reorder joins, so we match by condition,
-        # not by traversal order.
         if ntype in JOIN_NODES:
             cond = (node.get("Hash Cond") or node.get("Merge Cond")
                     or node.get("Join Filter") or node.get("Filter") or "")
@@ -574,17 +520,12 @@ def map_sql_clauses(sql: str, qep_nodes: list) -> list:
         return " | ".join(found)
 
     def _extract_sql_on_condition(line: str) -> str:
-        """Extract the ON condition from a SQL JOIN line, e.g.
-        'JOIN orders O ON C.c_custkey = O.o_custkey' -> 'C.c_custkey = O.o_custkey'
-        """
+        """Extract the ON condition from a SQL JOIN line"""
         m = re.search(r'\bON\b\s+(.+)', line, re.IGNORECASE)
         return m.group(1).strip().rstrip(";") if m else ""
 
     def _find_best_join(sql_on_cond: str):
-        """
-        Find the QEP join note whose condition best matches the SQL ON
-        condition. Returns (index, jtype, jcond) or None.
-        """
+        """Find the QEP join note whose condition best matches the SQL ON condition. Returns (index, jtype, jcond) or None."""
         if not sql_on_cond:
             return None
         for i, (jtype, jcond) in enumerate(join_notes):
@@ -621,7 +562,7 @@ def map_sql_clauses(sql: str, qep_nodes: list) -> list:
             annotation = _collect(sl) or None
         elif fw == "with":
             in_from = False
-            # CTE -- no specific annotation
+            # CTE no specific annotation
         elif in_from and fw not in (
             "where", "group", "order", "having", "limit",
             "join", "inner", "left", "right", "cross",

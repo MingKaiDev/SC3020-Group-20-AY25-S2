@@ -1,5 +1,3 @@
-# project.py
-
 import tkinter as tk
 from tkinter import messagebox
 from tkinter import ttk
@@ -12,12 +10,7 @@ from preprocessing import get_connection, close_connection
 # =============================================================================
 
 def configure_window(root: tk.Tk):
-    """
-    Applies global window settings to the root Tkinter window.
-
-    Args:
-        root (tk.Tk): The root Tkinter window.
-    """
+    """Applies global window settings to the root Tkinter window."""
     root.title("SC3020 Project 2 Group 20 SQL Query Annotator")
     screen_w = root.winfo_screenwidth()
     screen_h = root.winfo_screenheight()
@@ -34,13 +27,7 @@ def configure_window(root: tk.Tk):
 # =============================================================================
 
 def check_db_connection() -> bool:
-    """
-    Attempts a test connection to PostgreSQL before launching the GUI.
-    Warns the user early if the database is unreachable.
-
-    Returns:
-        bool: True if connection succeeded, False otherwise.
-    """
+    """Attempts a test connection to PostgreSQL before launching the GUI."""
     try:
         conn = get_connection()
         close_connection(conn)
@@ -63,9 +50,7 @@ def check_db_connection() -> bool:
 # =============================================================================
 
 def launch_app():
-    """
-    Main launch function. Runs pre-checks then starts the GUI.
-    """
+    """Main launch function. Runs pre-checks then starts the GUI."""
     if not check_db_connection():
         sys.exit(0)
     root = tk.Tk()
@@ -86,11 +71,7 @@ def launch_app():
 # =============================================================================
 
 if __name__ == "__main__":
-    """
-    Entry point when running:
-        python project.py
-        (or via PyCharm Run button)
-    """
+    """Entry point when running:"""
     try:
         launch_app()
     except Exception as e:

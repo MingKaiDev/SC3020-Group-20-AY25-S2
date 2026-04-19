@@ -1,5 +1,3 @@
-# interface.py
-
 import tkinter as tk
 import re, datetime
 

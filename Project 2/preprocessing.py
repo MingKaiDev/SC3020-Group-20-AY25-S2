@@ -1,5 +1,3 @@
-# preprocessing.py
-
 import psycopg
 import os
 import re
@@ -16,14 +14,8 @@ logger = logging.getLogger(__name__)
 # SECTION 1: DATABASE CONNECTION
 # =============================================================================
 
-def get_connection(): #Done
-    """
-    Establishes and returns a connection to the PostgreSQL database.
-    Reads credentials from the .env file.
-
-    Returns:
-        psycopg.Connection: A live database connection object.
-    """
+def get_connection():
+    """Establishes and returns a connection to the PostgreSQL database."""
     try:
         host = os.getenv("DB_HOST", "localhost")
         port = os.getenv("DB_PORT", "5432")
@@ -42,13 +34,8 @@ def get_connection(): #Done
         logger.exception("Failed to connect to PostgreSQL")
         raise ConnectionError(f"Failed to connect to PostgreSQL: {e}") from e
 
-def close_connection(conn): #Done
-    """
-    Safely closes the database connection.
-
-    Args:
-        conn (psycopg.Connection): The connection to close.
-    """
+def close_connection(conn):
+    """Safely closes the database connection."""
     if conn and not conn.closed:
         conn.close()
         logger.info("Database connection closed.")
@@ -58,15 +45,7 @@ def close_connection(conn): #Done
 # =============================================================================
 
 def validate_query(sql_query: str) -> bool:
-    """
-    Performs basic validation on the input SQL query string.
-
-    Args:
-        sql_query (str): The raw SQL query string from user/GUI input.
-
-    Returns:
-        bool: True if valid, False otherwise.
-    """
+    """Performs basic validation on the input SQL query string."""
     if not sql_query or not sql_query.strip():
         logger.warning("Query validation failed: empty or None query")
         return False
@@ -113,19 +92,7 @@ def validate_query(sql_query: str) -> bool:
 # =============================================================================
 
 def get_qep(conn, sql_query: str) -> dict:
-    """
-    Fetches the Query Execution Plan (QEP) chosen by PostgreSQL's optimizer.
-    Uses EXPLAIN (ANALYZE, FORMAT JSON) to retrieve the plan with cost estimates.
-
-    Args:
-        conn (psycopg.Connection): Active database connection.
-        sql_query (str): A validated SQL query string.
-
-    Returns:
-        dict: The root node of the QEP as a parsed Python dictionary.
-    NOTE:
-        The returned dict has structure: { "Plan": { "Node Type": ..., "Plans": [...] } }
-    """
+    """Fetches the Query Execution Plan (QEP) chosen by PostgreSQL's optimizer."""
     if not validate_query(sql_query):
         raise ValueError("Invalid SQL query — must be a read-only SELECT statement.")
 
@@ -149,19 +116,7 @@ def get_qep(conn, sql_query: str) -> dict:
 # =============================================================================
 
 def get_aqp(conn, sql_query: str, disabled_operators: list) -> dict:
-    """
-    Fetches a single Alternative Query Plan (AQP) by disabling specific
-    PostgreSQL planner operators, forcing the optimizer to choose differently.
-
-    Args:
-        conn (psycopg.Connection): Active database connection.
-        sql_query (str): A validated SQL query string.
-        disabled_operators (list): List of planner settings to disable.
-                                   e.g. ["enable_hashjoin", "enable_seqscan"]
-
-    Returns:
-        dict: The root node of the AQP as a parsed Python dictionary.
-    """
+    """Fetches a single Alternative Query Plan (AQP) by disabling specific PostgreSQL planner operators, forcing the optimizer to choose differently."""
     if not validate_query(sql_query):
         raise ValueError("Invalid SQL query.")
 
@@ -195,18 +150,7 @@ def get_aqp(conn, sql_query: str, disabled_operators: list) -> dict:
 
 
 def get_all_aqps(conn, sql_query: str) -> dict:
-    """
-    Collects multiple AQPs by disabling different operator groups one at a time.
-    This gives annotation.py enough data to compare costs across plan alternatives.
-
-    Args:
-        conn (psycopg.Connection): Active database connection.
-        sql_query (str): A validated SQL query string.
-
-    Returns:
-        dict: A mapping of plan label → AQP plan dict.
-              e.g. { "no_hashjoin": {...}, "no_seqscan": {...}, ... }
-    """
+    """Collects multiple AQPs by disabling different operator groups one at a time."""
     operator_groups = {
         "no_hashjoin":  ["enable_hashjoin"],
         "no_mergejoin": ["enable_mergejoin"],
@@ -228,24 +172,7 @@ def get_all_aqps(conn, sql_query: str) -> dict:
 # =============================================================================
 
 def parse_plan_nodes(plan: dict, nodes=None) -> list:
-    """
-    Recursively walks the QEP/AQP plan tree and returns a flat list of all nodes.
-    This makes it easy for annotation.py to scan for specific operator types.
-
-    Args:
-        plan (dict): The root plan dict (output of get_qep or get_aqp).
-        nodes (list): Accumulator list — leave as None on first call.
-
-    Returns:
-        list: A flat list of all node dicts in the plan tree.
-    EXAMPLE OUTPUT:
-        [
-          { "Node Type": "Hash Join", "Total Cost": 4523.0, ... },
-          { "Node Type": "Seq Scan",  "Relation Name": "orders", ... },
-          { "Node Type": "Hash",      ... },
-          { "Node Type": "Seq Scan",  "Relation Name": "customer", ... }
-        ]
-    """
+    """Recursively walks the QEP/AQP plan tree and returns a flat list of all nodes."""
     if nodes is None:
         nodes = []
     node = plan.get("Plan", plan)
@@ -256,29 +183,12 @@ def parse_plan_nodes(plan: dict, nodes=None) -> list:
 
 
 def get_node_cost(node: dict) -> float:
-    """
-    Safely extracts the total cost estimate from a single plan node.
-
-    Args:
-        node (dict): A single plan node dict.
-
-    Returns:
-        float: The "Total Cost" value, or infinity if not found.
-    """
+    """Safely extracts the total cost estimate from a single plan node."""
     return node.get("Total Cost", float("inf"))
 
 
 def get_root_cost(plan: dict) -> float:
-    """
-    Extracts the total cost from the root node of a full plan dict.
-    Used by annotation.py to compare QEP cost vs AQP costs.
-
-    Args:
-        plan (dict): Full plan dict (output of get_qep or get_aqp).
-
-    Returns:
-        float: The total cost at the root node.
-    """
+    """Extracts the total cost from the root node of a full plan dict."""
     root = plan.get("Plan", plan)
     return get_node_cost(root)
 
