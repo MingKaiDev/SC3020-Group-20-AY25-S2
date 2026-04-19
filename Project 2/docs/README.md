@@ -29,3 +29,10 @@ Assume you have PostgreSQL setuped with data being properly inserted.
     ```bash
     python project.py
     ```
+
+## User Guide
+- Press Connect DB to connect to the database
+- Click on Annotate Query to display the explanation on the Annotated output and QEP
+- Click on Cost Chart to see the cost comparison
+- Can drag around the QEP canvas and also zoom in/out via the button interface
+- History button opens up history logs to view past queries and restore them
