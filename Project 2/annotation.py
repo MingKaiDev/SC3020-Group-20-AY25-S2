@@ -399,7 +399,7 @@ def generate_annotations(qep: dict, aqps: dict, sql: str) -> dict:
     others = annotate_others(nodes)
     clause_map = map_sql_clauses(sql or "", nodes)
     full_text = "\n".join(scans + joins + others)
-
+    
     return {
         "scans": scans,
         "joins": joins,
@@ -443,8 +443,16 @@ def _match_join_condition(sql_on_cond: str, qep_cond: str) -> bool:
     return sql_tokens <= qep_tokens or qep_tokens <= sql_tokens
 
 
+
+
 def map_sql_clauses(sql: str, qep_nodes: list) -> list:
     """Maps each line of the SQL query to a relevant QEP annotation."""
+
+    _CLAUSE_RE = re.compile(
+        r'\b(SELECT|FROM|WHERE|GROUP\s+BY|ORDER\s+BY|HAVING|LIMIT|WITH)\b',
+        re.IGNORECASE
+    )
+
     _SQL_KEYWORDS = {
         "select", "from", "where", "join", "inner", "outer", "left", "right",
         "cross", "on", "and", "or", "not", "as", "in", "is", "null",
@@ -505,6 +513,14 @@ def map_sql_clauses(sql: str, qep_nodes: list) -> list:
             has_unique = True
             other_map.setdefault("distinct", "Duplicate removal (DISTINCT)")
 
+        def _get_all_keywords(sl: str) -> list[tuple[int, str]]:
+            """Return all SQL clause keywords found on the line, in order of position."""
+            results = []
+            for m in _CLAUSE_RE.finditer(sl):
+                kw = m.group(1).lower().replace(" ", "")
+                results.append((m.start(), kw))
+            return results
+        
     # Track which join_notes have been matched by condition
     used_join = [False] * len(join_notes)
 
@@ -546,81 +562,85 @@ def map_sql_clauses(sql: str, qep_nodes: list) -> list:
 
     for raw_line in lines:
         sl = raw_line.strip().lower()
-        annotation = None
         if not sl:
             result.append((raw_line, None))
             continue
-        fw = sl.split()[0]
 
-        if fw == "select":
-            in_from = False
-            # Check if SELECT DISTINCT
-            if "distinct" in sl and has_unique:
-                annotation = other_map.get("distinct")
-        elif fw == "from":
-            in_from = True
-            annotation = _collect(sl) or None
-        elif fw == "with":
-            in_from = False
-            # CTE no specific annotation
-        elif in_from and fw not in (
-            "where", "group", "order", "having", "limit",
-            "join", "inner", "left", "right", "cross",
-            "union", "select", "with", "on", "and", "or",
-        ):
-            annotation = _collect(sl.lstrip(",")) or None
+        fw = sl.split()[0]  
+        clause_keywords = _get_all_keywords(sl)
+
+        annotation_parts = []
+
+        if clause_keywords:
+            for _, kw in clause_keywords:
+                if kw == "select":
+                    in_from = False
+                    if "distinct" in sl and has_unique:
+                        annotation_parts.append(other_map.get("distinct", ""))
+
+                elif kw == "from":
+                    in_from = True
+                    ann = _collect(sl)
+                    if ann:
+                        annotation_parts.append(ann)
+
+                elif kw == "where":
+                    in_from = False
+                    ann = _collect(sl)
+                    if ann:
+                        annotation_parts.append(ann)
+
+                elif kw == "groupby":
+                    in_from = False
+                    ann = other_map.get("group")
+                    if ann:
+                        annotation_parts.append(ann)
+
+                elif kw == "orderby":
+                    in_from = False
+                    ann = other_map.get("order")
+                    if ann:
+                        annotation_parts.append(ann)
+
+                elif kw == "having":
+                    in_from = False
+                    ann = other_map.get("group")
+                    if ann:
+                        annotation_parts.append(ann)
+
+                elif kw == "limit":
+                    in_from = False
+                    ann = other_map.get("limit")
+                    if ann:
+                        annotation_parts.append(ann)
+
         elif "join" in sl and fw not in ("where", "on", "and", "or"):
             in_from = False
             parts = []
             ann = _collect(sl)
             if ann:
                 parts.append(ann)
-            # Match by ON condition instead of consuming sequentially
             sql_on = _extract_sql_on_condition(raw_line)
-            match = _find_best_join(sql_on)
-            if match is None:
-                # Fallback: sequential consumption
-                match = _consume_next_unused_join()
+            match = _find_best_join(sql_on) or _consume_next_unused_join()
             if match is not None:
                 idx, jtype, jcond = match
                 used_join[idx] = True
                 parts.append(f"-> {jtype}" + (f" on {jcond}" if jcond else ""))
-            annotation = " | ".join(parts) or None
-        elif fw in ("where", "on"):
-            in_from = False
-            scan_ann = _collect(sl)
-            if scan_ann:
-                annotation = scan_ann
-            else:
-                # For standalone ON lines, try condition matching too
-                sql_on = _extract_sql_on_condition(raw_line)
-                match = _find_best_join(sql_on) if sql_on else None
-                if match is None:
-                    match = _consume_next_unused_join()
-                if match is not None:
-                    idx, jtype, jcond = match
-                    used_join[idx] = True
-                    annotation = f"-> {jtype}" + (f" on {jcond}" if jcond else "")
-        elif fw == "order":
-            in_from = False
-            annotation = other_map.get("order")
-        elif fw == "group":
-            in_from = False
-            annotation = other_map.get("group")
-        elif fw == "having":
-            in_from = False
-            annotation = other_map.get("group")  # HAVING is tied to aggregation
-        elif fw == "limit":
-            in_from = False
-            annotation = other_map.get("limit")
-        elif fw == "distinct":
-            annotation = other_map.get("distinct")
+            annotation_parts = parts
+
+        elif in_from:
+            ann = _collect(sl.lstrip(","))
+            if ann:
+                annotation_parts.append(ann)
+
         else:
             if fw not in ("case", "when", "then", "else", "end"):
                 in_from = False
 
+        annotation = " | ".join(filter(None, annotation_parts)) or None
         result.append((raw_line, annotation))
     return result
+
 # =============================================================================
 # SECTION 8: ENTRY POINT (for quick testing)
 # =============================================================================
