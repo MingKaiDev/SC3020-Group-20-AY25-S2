@@ -1,11 +1,4 @@
 # preprocessing.py
-# Responsibilities:
-#   - Establish and manage PostgreSQL database connection
-#   - Accept and validate SQL query input
-#   - Fetch the Query Execution Plan (QEP) from PostgreSQL
-#   - Fetch Alternative Query Plans (AQPs) by toggling planner settings
-#   - Parse and flatten QEP/AQP plan trees into usable structures
-#   - Pass processed data to annotation.py
 
 import psycopg
 import os
@@ -33,7 +26,6 @@ def get_connection(): #Done
     """
     try:
         host = os.getenv("DB_HOST", "localhost")
-        #host = "localhost"
         port = os.getenv("DB_PORT", "5432")
         dbname = os.getenv("DB_NAME", "postgres")
         user = os.getenv("DB_USER", "postgres")

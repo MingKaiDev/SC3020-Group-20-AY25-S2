@@ -129,7 +129,7 @@ def annotate_scans(qep_nodes: list) -> list:
             text = (
                 f"Table '{table}'{alias_str} is read using Sequential Scan. "
                 f"PostgreSQL estimated that a sequential scan is the cheapest "
-                f"strategy for this table -- possibly because the table is small, "
+                f"strategy for this table. This may be because the table is small, "
                 f"the filter is not very selective, or no useful index is available "
                 f"for the filtered columns."
             )
@@ -190,18 +190,27 @@ def annotate_scans(qep_nodes: list) -> list:
 def annotate_joins(qep_nodes: list, aqps: dict, qep_cost: float) -> list:
     """
     Generates annotation strings for all join operations found in the QEP.
-    Uses AQP cost comparisons to explain WHY the chosen join was selected.
 
-    The AQP comparison is based on whole-query root cost, not individual
-    join-node cost.
+    Structure:
+    1. Individual join node annotations (type, condition, node cost).
+    2. A separate AQP comparison summary appended at the end, showing one
+       whole-query cost comparison per join operator type.
     """
     annotations = []
+    join_types_seen = set()
+
+    _join_aqp_map = {
+        "Hash Join":    "no_hashjoin",
+        "Merge Join":   "no_mergejoin",
+        "Nested Loop":  "no_nestloop",
+    }
 
     for node in qep_nodes:
         node_type = node.get("Node Type", "")
         if node_type not in JOIN_NODES:
             continue
 
+        join_types_seen.add(node_type)
         join_kind = node.get("Join Type", "")
 
         # Extract the relevant join condition
@@ -241,21 +250,41 @@ def annotate_joins(qep_nodes: list, aqps: dict, qep_cost: float) -> list:
         if join_filter and join_filter != condition:
             text += f" Join filter: {join_filter}."
 
-        # AQP comparison -- only compare the AQP that disables THIS join type,
-        # since that is the most relevant comparison for the chosen operator.
-        _join_aqp_map = {
-            "Hash Join":    "no_hashjoin",
-            "Merge Join":   "no_mergejoin",
-            "Nested Loop":  "no_nestloop",
-        }
-        relevant_label = _join_aqp_map.get(node_type)
-        if relevant_label and aqps and relevant_label in aqps:
-            single_aqp = {relevant_label: aqps[relevant_label]}
-            reasons = get_cost_comparison_reasons(qep_cost, single_aqp)
-            if reasons:
-                text += " " + " ".join(reasons)
+        # Append the intermediate node cost for this specific join node.
+        node_cost = node.get("Total Cost")
+        if node_cost is not None:
+            text += f" Node cost: {_format_cost(node_cost)}."
 
         annotations.append(text)
+
+    # --- AQP comparison summary (one entry per join operator type) ---
+    if join_types_seen and aqps:
+        summary_lines = []
+        for jtype in ("Hash Join", "Merge Join", "Nested Loop"):
+            if jtype not in join_types_seen:
+                continue
+            label = _join_aqp_map.get(jtype)
+            if not label or label not in aqps or aqps[label] is None:
+                continue
+            aqp_cost = get_root_cost(aqps[label])
+            ratio = compare_costs(qep_cost, aqp_cost)
+            alt_desc = AQP_LABEL_MAP.get(label, label)
+            if ratio == float("inf"):
+                summary_lines.append(
+                    f"A plan {alt_desc} has a very high cost "
+                    f"(QEP root cost: {_format_cost(qep_cost)})."
+                )
+            elif ratio > 1.0:
+                summary_lines.append(
+                    f"A plan {alt_desc} costs about {ratio}x the original "
+                    f"whole-query plan (QEP root cost: {_format_cost(qep_cost)}, "
+                    f"AQP root cost: {_format_cost(aqp_cost)})."
+                )
+        if summary_lines:
+            annotations.append(
+                "AQP comparison summary: " + " ".join(summary_lines)
+            )
+
     return annotations
 
 # =============================================================================
@@ -266,11 +295,21 @@ def annotate_others(qep_nodes: list) -> list:
     """
     Generates annotation strings for non-scan, non-join operations
     such as Sort, Aggregate, Limit, Hash, Materialize, etc.
+
+    - Hash nodes are skipped (internal helper for Hash Join, already explained).
+    - Duplicate Aggregate annotations (same strategy + group keys) are skipped.
+      Different strategies or group keys are kept visible.
     """
     annotations = []
+    seen_aggregate_keys = set()
+
     for node in qep_nodes:
         node_type = node.get("Node Type", "")
         if node_type not in OTHER_NODES:
+            continue
+
+        # Skip standalone Hash nodes -- they are internal to Hash Join.
+        if node_type == "Hash":
             continue
 
         if node_type == "Sort":
@@ -291,23 +330,22 @@ def annotate_others(qep_nodes: list) -> list:
         elif node_type in ("Aggregate", "Hash Aggregate", "Group Aggregate"):
             strategy = node.get("Strategy", "")
             group_keys = node.get("Group Key", [])
-            if strategy:
-                text = f"Aggregation is performed using the '{strategy}' strategy"
-            else:
-                text = f"A {node_type} operation is performed"
+            agg_key = (node_type, strategy, tuple(group_keys))
+            if agg_key in seen_aggregate_keys:
+                continue
+            seen_aggregate_keys.add(agg_key)
             if group_keys:
-                text += f" on group key(s): {', '.join(group_keys)}"
-            text += (
-                ". This computes aggregate results (e.g. COUNT, SUM, AVG) "
-                "over groups of rows."
-            )
-
-        elif node_type == "Hash":
-            text = (
-                "PostgreSQL builds an in-memory hash table from the input rows. "
-                "This hash table is used by a subsequent Hash Join to quickly "
-                "match rows from the other side of the join."
-            )
+                text = (
+                    f"The query performs aggregation grouped by: "
+                    f"{', '.join(group_keys)}."
+                )
+            else:
+                text = "The query performs aggregation."
+            if strategy:
+                text += (
+                    f" PostgreSQL uses the '{strategy}' aggregation strategy "
+                    f"in the selected plan."
+                )
 
         elif node_type == "Limit":
             rows = node.get("Plan Rows", "")
@@ -647,20 +685,9 @@ def map_sql_clauses(sql: str, qep_nodes: list) -> list:
 # =============================================================================
 
 if __name__ == "__main__":
-    from dummy_data import get_dummy_qep, get_dummy_aqps, DUMMY_SQL
-
-    # --- Dummy data test ---
-    print("=== Dummy Data Test ===")
-    qep = get_dummy_qep()
-    aqps = get_dummy_aqps()
-    result = generate_annotations(qep, aqps, DUMMY_SQL)
-    print(result["full_text"])
-    print(f"\nScans: {len(result['scans'])}, Joins: {len(result['joins'])}, "
-          f"Others: {len(result['others'])}")
-
-    # --- Real data test ---
-    print("\n=== Real Data Test ===")
     from preprocessing import get_connection, close_connection, get_qep, get_all_aqps
+
+    print("=== annotation.py smoke test (live DB) ===")
     conn = get_connection()
     try:
         sql = "SELECT * FROM customer C, orders O WHERE C.c_custkey = O.o_custkey"

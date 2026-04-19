@@ -1,11 +1,4 @@
 # project.py
-# Responsibilities:
-#   - Serve as the single entry point to launch the application
-#   - Initialise the Tkinter root window with correct settings
-#   - Verify database connectivity before launching the GUI
-#   - Instantiate the TpcHAnnotatorApp from interface.py
-#   - Handle any top-level exceptions gracefully
-#   - Start the Tkinter main event loop
 
 import tkinter as tk
 from tkinter import messagebox
